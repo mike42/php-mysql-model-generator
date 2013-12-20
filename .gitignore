@@ -1,0 +1,11 @@
+# Eclipse files
+.buildpath
+.project
+.settings/*
+
+# Site-specific files
+examples/*
+
+# temp and hidden files
+*~
+.*
