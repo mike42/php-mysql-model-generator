@@ -5,6 +5,7 @@
  * @author Michael Billington <michael.billington@gmail.com>
  */
 class SQL_Constraint {
+	public $name;
 	public $child_fields;
 	public $parent_table;
 	public $parent_fields;
@@ -25,6 +26,8 @@ class SQL_Constraint {
 				case 0:
 					if($token -> type == SQL_Token::KEYWORD && strtoupper($token -> str) == "FOREIGN") {
 						$stage++;
+					} else if($token -> type == SQL_Token::IDENTIFIER) {
+						$this -> name = SQL_Token::get_identifier($token -> str);
 					}
 					break;
 
