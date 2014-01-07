@@ -251,7 +251,7 @@ class Model_Generator {
 		$sql = "SELECT " . implode(", ", $join['fields']) . " FROM " . $table -> name . " " . $join['clause'] . " WHERE " . implode(" AND ", $conditions);
 		$str .= "\t\t\$sth = database::\$dbh -> prepare(\"$sql;\");\n";
 		$str .= "\t\t\$sth -> execute(array(" . implode(", ", $arrEntry) . "));\n";
-		$str .= "\t\t\$row = \$sth -> fetch(PDO::FETCH_OBJ);\n";
+		$str .= "\t\t\$row = \$sth -> fetch(PDO::FETCH_NUM);\n";
 		$str .= "\t\t\$assoc = self::row_to_assoc(\$row);\n";
 		$str .= "\t\treturn new " . $table -> name . "_model(\$assoc);\n";
 		$str .= "\t}\n";
@@ -270,7 +270,7 @@ class Model_Generator {
  			$sql = "SELECT " . implode(", ", $join['fields']) . " FROM " . $table -> name . " " . $join['clause'] . " WHERE " . implode(" AND ", $conditions);
  			$str .= "\t\t\$sth = database::\$dbh -> prepare(\"$sql;\");\n";
  			$str .= "\t\t\$sth -> execute(array(" . implode(", ", $arrEntry) . "));\n";
- 			$str .= "\t\t\$row = \$sth -> fetch(PDO::FETCH_OBJ);\n";
+ 			$str .= "\t\t\$row = \$sth -> fetch(PDO::FETCH_NUM);\n";
  			$str .= "\t\t\$assoc = self::row_to_assoc(\$row);\n";
  			$str .= "\t\treturn new " . $table -> name . "_model(\$assoc);\n";
 			$str .= "\t}\n";
@@ -299,7 +299,7 @@ class Model_Generator {
  			$sql = "SELECT " . implode(", ", $join['fields']) . " FROM " . $table -> name . " " . $join['clause'] . " WHERE " . implode(" AND ", $conditions);
  			$str .= "\t\t\$sth = database::\$dbh -> prepare(\"$sql\" . \$ls . \";\");\n";
  			$str .= "\t\t\$sth -> execute(array(" . implode(", ", $arrEntry) . "));\n";
-			$str .= "\t\t\$rows = \$sth -> fetchAll(PDO::FETCH_OBJ);\n" .
+			$str .= "\t\t\$rows = \$sth -> fetchAll(PDO::FETCH_NUM);\n" .
 					"\t\t\$ret = array();\n" .
 					"\t\tforeach(\$rows as \$row) {\n" .
 					"\t\t\t\$assoc = self::row_to_assoc(\$row);\n" .
