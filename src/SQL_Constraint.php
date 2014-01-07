@@ -9,6 +9,7 @@ class SQL_Constraint {
 	public $child_fields;
 	public $parent_table;
 	public $parent_fields;
+	public $child_table; // Used when generating models
 
 	/**
 	 * Roughly parse constraints

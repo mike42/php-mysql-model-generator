@@ -20,16 +20,66 @@ class Model_Generator {
 	}
 
 	public function generate() {
-		@mkdir($this -> base);
-		@mkdir($this -> base . "/model");
-		@mkdir($this -> base . "/view");
-		@mkdir($this -> base . "/controller");
+		$this -> make_app_skeleton();
 		foreach($this -> database -> table as $table) {
 			$this -> make_model($table);
+			$this -> make_controller($table);
 		}
 	}
 
+	private function make_app_skeleton() {
+		if(file_exists($this -> base)) {
+			throw new Exception("Cannot save to " . $this -> base . ", a file/folder exists there.");
+		}
+		mkdir($this -> base);
+		mkdir($this -> base . "/lib");
+		mkdir($this -> base . "/lib/model");
+		mkdir($this -> base . "/lib/controller");
+		mkdir($this -> base . "/lib/util");
+		mkdir($this -> base . "/site");
+		copy(dirname(__FILE__) . "/template/config.php", $this -> base . "/site/config.php");
+		copy(dirname(__FILE__) . "/template/database.php", $this -> base . "/lib/util/database.php");
+		
+		// TODO: Generate main class
+		
+		/* Generate default permissions */
+		$str = "<?php\n";
+		$str .= "/* Permissions for database fields */\n";
+		$roles = array('user', 'admin');
+
+		foreach($roles as $role) {
+			$str .= "\$permission['$role'] = array(\n";
+			$foo = array();
+			foreach($this -> database -> table as $table) {
+				/* Quick list of columns */
+				$cols = array();
+				foreach($table -> cols as $colspec) {
+					$cols[] = "\t\t\t'".$colspec -> name."'";
+				}
+				$col_list = (count($cols) > 0? "\n". implode(",\n", $cols) : "");
+				$a = "\t'" . $table -> name . "' => array(\n";
+				$a .= "\t\t'create' => true,\n";
+				$a .= "\t\t'read' => array(". $col_list ."),\n";
+				$a .= "\t\t'update' => array(". $col_list ."),\n";
+				$a .= "\t\t'delete' => true)";
+				$foo[] = $a;
+			}
+			$str .= implode(",\n", $foo) . ");\n";
+		}
+		file_put_contents($this -> base . "/site/permissions.php", $str);
+	}
+	
 	private function make_model(SQL_Table $table) {
+		/* Figure out PK */
+		$pkfields = array();
+		foreach($table -> pk as $fieldname) {
+			$pkfields[] = "$fieldname = :$fieldname";
+		}
+		
+		/* Figure out JOIN clause to use on every SELECT */
+		$join = $this -> getJOIN($table -> name);
+		
+		/* Generate model */		
 		$str = "<?php\nclass ".$table -> name . "_model {\n";
 		foreach($table -> cols as $col) {
 			/* Class variables */
@@ -52,7 +102,7 @@ class Model_Generator {
 		if(count($table -> constraints) != 0) {
 			$str .= "\n\t/* Parent tables */\n";
 			foreach($table -> constraints as $fk) {
-				if($fk -> parent_table != $table -> name) { // Tables which reference themselves do not go well with this
+				if($fk -> parent_table != $table -> name) { // Tables which reference themselves do not go well with this!
 					$str .= "\tpublic \$".$fk -> parent_table . ";\n";
 				}
 			}
@@ -67,11 +117,12 @@ class Model_Generator {
 		}
 
 		/* Constructor */
-		$str .= "\n\tpublic function __construct(array \$fields = array()) {\n";
+		$str .= "\n" . $this -> block_comment("Construct new " . $table -> name . " from field list\n\n@return array", 1);
+		$str .= "\tpublic function __construct(array \$fields = array()) {\n";
 		if(count($table -> cols) != 0) {
 			foreach($table -> cols as $col) {
-				$str .= "\t\tif(isset(\$fields['" . $col -> name . "'])) {\n" .
-					"\t\t\t\$this -> set_" . $col -> name . "(\$fields['" . $col -> name . "']);\n" .
+				$str .= "\t\tif(isset(\$fields['" . $table -> name . "." . $col -> name . "'])) {\n" .
+					"\t\t\t\$this -> set_" . $col -> name . "(\$fields['" . $table -> name . "." . $col -> name . "']);\n" .
 					"\t\t}\n";
 			}
 			$str .= "\n";
@@ -83,17 +134,49 @@ class Model_Generator {
 			}
 		}
 		$str .= "\t}\n";
-
-
+		
+		/* To array */
+		$str .= "\n" . $this -> block_comment("Convert " . $table -> name . " to shallow associative array\n\n@return array", 1);
+		$str .= "\tprivate function to_array() {\n";
+		$fieldlist = array();
+		foreach($table -> cols as $col) {
+				$fieldlist[] = "\t\t\t'".$col -> name . "' => \$this -> " . $col -> name . "";
+		}
+		$str .= "\t\t\$values = array(".(count($fieldlist) > 0 ? "\n" . implode(",\n", $fieldlist) : "") .  ");\n";
+		$str .= "\t\treturn \$values;\n";
+		$str .= "\t}\n";
+		
+		/* To restricted array (eg. for user output) */
+		$str .= "\n" . $this -> block_comment("Convert " . $table -> name . " to associative array, including only visible fields,\n" .
+				"parent tables, and loaded child tables\n\n" . 
+				"@param string \$role The user role to use", 1);
+		$str .= "\tpublic function to_array_filtered(\$role = \"anon\") {\n";
+		// TODO
+		$str .= "\t\t// TODO: Insert code for " . $table -> name . " permission-check\n";
+		$str .= "\t}\n";
+		
+		/* From array('foo', 'bar', 'baz') to array('a.weeble' => 'foo', 'a.warble' => bar, 'b.beeble' => 'baz') */
+		$str .= "\n" . $this -> block_comment("Convert retrieved database row from numbered to named keys, including table name\n\n@param array \$row ror retrieved from database\n@return array row with indices", 1);
+		$str .= "\tprivate static function row_to_assoc(array \$row) {\n";
+		$cols = array();
+		foreach($join['fields'] as $num => $name) {
+			$cols[] = "\t\t\t\"$name\" => \$row[$num]";
+		}
+		$str .= "\t\t\$values = array(". (count($cols) > 0? "\n". implode(",\n", $cols) : "") . ");\n";
+		$str .= "\t\treturn \$values;\n";
+		$str .= "\t}\n";
+		
 		/* Getters and setters */
 		foreach($table -> cols as $col) {
-			$str .= "\n\tpublic function get_" . $col -> name . "() {\n";
+			$str .= "\n" . $this -> block_comment("Get " . $col -> name . "\n\n@return " . $this -> primitive($col), 1);
+			$str .= "\tpublic function get_" . $col -> name . "() {\n";
 			$str .= "\t\tif(!isset(\$this -> model_variables_set['" . $col -> name . "'])) {\n";
 			$str .= "\t\t\tthrow new Exception(\"" . $table -> name . "." . $col -> name . " has not been initialised.\");\n";
 			$str .= "\t\t}\n";
 			$str .= "\t\treturn \$this -> " . $col -> name .";\n";
 			$str .= "\t}\n";
-			$str .= "\n\t".(in_array($col -> name, $table -> pk) ? "private" : "public" ) . " function set_" . $col -> name . "($" . $col -> name . ") {\n";
+			$str .= "\n" . $this -> block_comment("Set " . $col -> name . "\n\n@param " . $this -> primitive($col) . " \$" . $col -> name, 1);
+			$str .= "\t".(in_array($col -> name, $table -> pk) ? "private" : "public" ) . " function set_" . $col -> name . "($" . $col -> name . ") {\n";
 			$str .= $this -> validate_type($table, $col);
 			$str .= "\t\t\$this -> " . $col -> name ." = $" . $col -> name . ";\n";
 			$str .= "\t\t\$this -> model_variables_changed['" . $col -> name ."'] = true;\n";
@@ -102,65 +185,141 @@ class Model_Generator {
 		}
 
 		/* Update */
-		// TODO
-		$str .= "\n\tpublic function update() {\n";
-		$str .= "\t\t// TODO: Update code for " . $table -> name . "\n";
+		$str .= "\n" . $this -> block_comment("Update " . $table -> name, 1);
+		$str .= "\tpublic function update() {\n" .
+		 	"\t\tif(count(\$this -> model_variables_changed) == 0) {\n" .
+		 	"\t\t\tthrow new Exception(\"Nothing to update\");\n" .
+		 	"\t\t}\n\n" .
+		 	"\t\t/* Compose list of changed fields */\n" .
+		 	"\t\t\$fieldset = array();\n" .
+		 	"\t\tforeach(\$this -> model_variables_changed as \$col => \$changed) {\n" .
+		 	"\t\t\t\$fieldset[] = \"\$col = :\$col\";\n" .
+		 	"\t\t}\n" .
+		 	"\t\t\$fields = implode(\", \", \$fieldset);\n\n" .
+		 	"\t\t/* Execute query */\n";
+		$str .= "\t\t\$sth = database::\$dbh -> prepare(\"UPDATE ".$table -> name . " SET \$fields WHERE " . implode(" AND ", $pkfields). "\");\n";
+		$str .= "\t\t\$sth -> execute(\$this -> to_array());\n";
 		$str .= "\t}\n";
 
 		/* Insert */
-		// TODO
-		$str .= "\n\tpublic function insert() {\n";
-		$str .= "\t\t// TODO: Insert code for " . $table -> name . "\n";
+		$str .= "\n" . $this -> block_comment("Add new " . $table -> name, 1);
+		$str .= "\tpublic function insert() {\n" .
+		 	"\t\tif(count(\$this -> model_variables_changed) == 0) {\n" .
+		 	"\t\t\tthrow new Exception(\"No fields have been set!\");\n" .
+		 	"\t\t}\n\n" .
+		 	"\t\t/* Compose list of set fields */\n" .
+		 	"\t\t\$fieldset = array();\n" .
+		 	"\t\tforeach(\$this -> model_variables_set as \$col => \$changed) {\n" .
+		 	"\t\t\t\$fieldset[] = \$col;\n" .
+		 	"\t\t\t\$fieldset_colon[] = \":\$col\";\n" .
+		 	"\t\t}\n";
+		$str .= "\t\t\$fields = implode(\", \", \$fieldset);\n" .
+			"\t\t\$vals = implode(\", \", \$fieldset_colon);\n\n" .
+			"\t\t/* Execute query */\n" .
+			"\t\t\$sth = database::\$dbh -> prepare(\"INSERT INTO ".$table -> name . " (\$fields) VALUES (\$vals);\");\n";
+		$str .= "\t\t\$sth -> execute(\$this -> to_array());\n";
 		$str .= "\t}\n";
 
 		/* Delete */
-		// TODO
-		$str .= "\n\tpublic function delete() {\n";
-		$str .= "\t\t// TODO: Delete code for " . $table -> name . "\n";
+		$str .= "\n" . $this -> block_comment("Delete " . $table -> name, 1);
+		$str .= "\tpublic function delete() {\n";
+		$str .= "\t\t\$sth = database::\$dbh -> prepare(\"DELETE FROM ".$table -> name . " WHERE " . implode(" AND ", $pkfields). "\");\n";
+		$str .= "\t\t\$sth -> execute(\$this -> to_array());\n";
 		$str .= "\t}\n";
 
 		/* Populate child tables */
 		if(isset($this -> rev_constraints[$table -> name]) && count($this -> rev_constraints[$table -> name]) != 0) {
 			foreach($this -> rev_constraints[$table -> name] as $child => $fk) {
-				$str .= "\n\tpublic  function populate_list_".$child . "(\$start = 0, \$limit = -1) {\n";
+				$str .= "\n" . $this -> block_comment("Get associated rows from " . $child . " table\n\n" .
+							"@param int \$start Row to begin from. Default 0 (begin from start)\n" . 
+							"@param int \$limit Maximum number of rows to retrieve. Default -1 (no limit)", 1);
+				$str .= "\tpublic function populate_list_".$child . "(\$start = 0, \$limit = -1) {\n";
 				$str .= "\t\t\$this -> list_".$child." = ".$child . "_model::list_by_".$fk -> name ."(". implode(",", $this -> listFields($this -> database -> table[$child], $fk -> child_fields, true)) .", \$start, \$limit);\n";
 				$str .= "\t}\n";
 			}
 		}
 
 		/* Get by primary key */
-		// TODO
 		$str .= "\n\tpublic static function get(";
 		$str .= implode(", ", $this -> listFields($table, $table -> pk, true));
 		$str .= ") {\n";
-		$str .= "\t\t// TODO: Code to retrieve " . $table -> name . " by primary key\n";
+		$conditions = $arrEntry = array();
+		foreach($table -> pk as $field) {
+			$conditions[] = $table -> name . "." . $field . " = :$field";
+			$arrEntry[] = "'$field' => \$$field";
+		}
+		$sql = "SELECT " . implode(", ", $join['fields']) . " FROM " . $table -> name . " " . $join['clause'] . " WHERE " . implode(" AND ", $conditions);
+		$str .= "\t\t\$sth = database::\$dbh -> prepare(\"$sql;\");\n";
+		$str .= "\t\t\$sth -> execute(array(" . implode(", ", $arrEntry) . "));\n";
+		$str .= "\t\t\$row = \$sth -> fetch(PDO::FETCH_OBJ);\n";
+		$str .= "\t\t\$assoc = self::row_to_assoc(\$row);\n";
+		$str .= "\t\treturn new " . $table -> name . "_model(\$assoc);\n";
 		$str .= "\t}\n";
 
 		/* Get by unique indices */
-		// TODO
 		foreach($table -> unique as $unique) {
 			$str .= "\n\tpublic static function get_by_".$unique -> name."(";
 			$str .= implode(", ", $this -> listFields($table, $unique -> fields, true));
 			$str .= ") {\n";
-			$str .= "\t\t// TODO: Code to retrieve " . $table -> name . " by ".$unique -> name."\n";
+ 			$conditions = $arrEntry = array();
+ 			foreach($unique -> fields as $field) {
+ 				$conditions[] = $table -> name . "." . $field . " = :$field";
+ 				$arrEntry[] = "'$field' => \$$field";
+ 			}
+ 			/* Similar to get() above */
+ 			$sql = "SELECT " . implode(", ", $join['fields']) . " FROM " . $table -> name . " " . $join['clause'] . " WHERE " . implode(" AND ", $conditions);
+ 			$str .= "\t\t\$sth = database::\$dbh -> prepare(\"$sql;\");\n";
+ 			$str .= "\t\t\$sth -> execute(array(" . implode(", ", $arrEntry) . "));\n";
+ 			$str .= "\t\t\$row = \$sth -> fetch(PDO::FETCH_OBJ);\n";
+ 			$str .= "\t\t\$assoc = self::row_to_assoc(\$row);\n";
+ 			$str .= "\t\treturn new " . $table -> name . "_model(\$assoc);\n";
 			$str .= "\t}\n";
 		}
 
 		/* List by other indices */
-		// TODO
 		foreach($table -> index as $index) {
-			$str .= "\n\tpublic static function list_by_".$index -> name."(";
+			$str .= "\n" . $this -> block_comment("List rows by " . $index -> name . " index\n\n" .
+					"@param int \$start Row to begin from. Default 0 (begin from start)\n" .
+					"@param int \$limit Maximum number of rows to retrieve. Default -1 (no limit)", 1);
+			$str .= "\tpublic static function list_by_".$index -> name."(";
 			$str .= implode(", ", $this -> listFields($table, $index -> fields, true));
-			$str .= ", \$start = 0, \$limit = -1) {\n";
-			$str .= "\t\t// TODO: Code to list " . $table -> name . " by ".$index -> name."\n";
+			$str .= ", \$start = 0, \$limit = -1) {\n";			
+			$str .= "\t\t\$ls = \"\";\n" .
+					"\t\t\$start = (int)\$start;\n" .
+					"\t\t\$limit = (int)\$limit;\n" .
+					"\t\tif(\$start > 0 && \$limit > 0) {\n" .
+					"\t\t\t\$ls = \" LIMIT \$start, \" . (\$start + \$limit);\n" .
+					"\t\t}\n";
+ 			$conditions = $arrEntry = array();
+ 			foreach($index -> fields as $field) {
+ 				$conditions[] = $table -> name . "." . $field . " = :$field";
+ 				$arrEntry[] = "'$field' => \$$field";
+ 			}
+ 			/* Query is again similar to get() above */
+ 			$sql = "SELECT " . implode(", ", $join['fields']) . " FROM " . $table -> name . " " . $join['clause'] . " WHERE " . implode(" AND ", $conditions);
+ 			$str .= "\t\t\$sth = database::\$dbh -> prepare(\"$sql\" . \$ls . \";\");\n";
+ 			$str .= "\t\t\$sth -> execute(array(" . implode(", ", $arrEntry) . "));\n";
+			$str .= "\t\t\$rows = \$sth -> fetchAll(PDO::FETCH_OBJ);\n" .
+					"\t\t\$ret = array();\n" .
+					"\t\tforeach(\$rows as \$row) {\n" .
+					"\t\t\t\$assoc = self::row_to_assoc(\$row);\n" .
+					"\t\t\t\$ret[] = new " . $table -> name . "_model(\$assoc);\n" .
+					"\t\t}\n" .
+					"\t\treturn \$ret;\n";
 			$str .= "\t}\n";
 		}
 
 		/* Finalise and output */
 		$str .= "}\n?>";
-		file_put_contents($this -> base . "/model/" . $table -> name . "_model.php", $str);
+		file_put_contents($this -> base . "/lib/model/" . $table -> name . "_model.php", $str);
 	}
 
+	private function make_controller(SQL_Table $table) {
+		$str = "<?php\nclass ".$table -> name . "_controller {\n";
+		$str .= "}\n?>";
+		file_put_contents($this -> base . "/lib/controller/" . $table -> name . "_controller.php", $str);
+	}
+	
 	private function listFields(SQL_Table $table, $fields = false, $php = false) {
 		$ret = array();
 		if(!$fields) {
@@ -175,6 +334,18 @@ class Model_Generator {
 		return $ret;
 	}
 
+	private function primitive(SQL_Colspec $col) {
+		if($col -> type == "INT") {
+			return "int";
+		}
+		return "string";
+	}
+	
+	/**
+	 * @param SQL_Table $table
+	 * @param SQL_Colspec $col
+	 * @return string
+	 */
 	private function validate_type(SQL_Table $table, SQL_Colspec $col) {
 		if($col -> type == "INT") {
 			return "\t\tif(!is_numeric(\$".$col -> name . ")) {\n" .
@@ -188,7 +359,7 @@ class Model_Generator {
 			}
 		} else if($col -> type == "ENUM") {
 			if(count($col -> values) > 0) {
-				return "\t\tif(!in_array(\$".$col -> name . ", self::\$".$col -> name."_values) {\n" .
+				return "\t\tif(!in_array(\$".$col -> name . ", self::\$".$col -> name."_values)) {\n" .
 						"\t\t\tthrow new Exception(\"" . $table -> name . "." . $col -> name . " must be one of the defined values.\");\n" .
 						"\t\t}\n";
 			}
@@ -240,5 +411,61 @@ class Model_Generator {
 			}
 		}
 		return true;
+	}
+	
+	private function block_comment($str, $indent) {
+		$lines = explode("\n", $str);
+		$outp = "";
+		for($i = 0; $i < $indent; $i++) {
+			$outp .= "\t";
+		}
+		$outp .= "/**\n";
+		foreach($lines as $line) {
+			for($i = 0; $i < $indent; $i++) {
+				$outp .= "\t";
+			}
+			$outp .= " * " . $line . "\n";
+		}
+		for($i = 0; $i < $indent; $i++) {
+			$outp .= "\t";
+		}
+		$outp .= " */\n";
+		return $outp;
+	}
+	
+	private function getJoin($fromTableName) {
+		/* Breadth-first search for parent tables */
+		$allfields = array();
+		$queue = array();
+		$ret = array();
+		$visited = array($fromTableName);		
+		foreach($this -> database -> table[$fromTableName] -> cols as $col) {
+			$allfields[] = $fromTableName . "." . $col -> name;
+		}
+		foreach($this -> database -> table[$fromTableName] -> constraints as $constraint) {
+			$constraint -> child_table = $fromTableName;
+			$queue[] = $constraint;
+		}
+		
+		while(count($queue) != 0) {
+			$constraint = array_shift($queue);
+			if(array_search($constraint -> parent_table, $visited) === false) {
+				$visited[] = $constraint -> parent_table;
+				
+				$condition = array();
+				foreach($constraint -> child_fields as $num => $field) {
+					$condition[] = $constraint -> child_table . "." . $field . " = " . $constraint -> parent_table . "." . $constraint -> parent_fields[$num];
+				}
+				$ret[] = "JOIN " . $constraint -> parent_table . " ON " . implode(" AND ", $condition);
+				foreach($this -> database -> table[$constraint -> parent_table] -> cols as $col) {
+					$allfields[] = $constraint -> parent_table . "." . $col -> name;
+				}
+				foreach($this -> database -> table[$constraint -> parent_table] -> constraints as $sub_constraint) {
+					$sub_constraint -> child_table = $constraint -> parent_table;
+					$queue[] = $sub_constraint;
+				}
+			}
+		}
+		return array('clause' => implode(" ", $ret), 'fields' => $allfields);
 	}
 }
