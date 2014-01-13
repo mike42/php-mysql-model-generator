@@ -33,7 +33,7 @@ class SQL_Token {
 			"DAY_MINUTE", "DAY_SECOND", "DEC", "DECIMAL", "DECLARE", "DEFAULT", "DELAYED", "DELETE", "DESC", "DESCRIBE",
 			"DETERMINISTIC", "DISTINCT", "DISTINCTROW", "DIV", "DOUBLE", "DROP", "DUAL", "EACH", "ELSE", "ELSEIF",
 			"ENCLOSED", "ESCAPED", "EXISTS", "EXIT", "EXPLAIN", "FALSE", "FETCH", "FLOAT", "FLOAT4", "FLOAT8", "FOR",
-			"FORCE", "FOREIGN", "FROM", "FULLTEXT", "GENERAL[a]", "GRANT", "GROUP", "HAVING", "HIGH_PRIORITY",
+			"FORCE", "FOREIGN", "FROM", "FULLTEXT", "GENERAL", "GRANT", "GROUP", "HAVING", "HIGH_PRIORITY",
 			"HOUR_MICROSECOND", "HOUR_MINUTE", "HOUR_SECOND", "IF", "IGNORE", "IGNORE_SERVER_IDS[b]", "IN", "INDEX",
 			"INFILE", "INNER", "INOUT", "INSENSITIVE", "INSERT", "INT", "INT1", "INT2", "INT3", "INT4", "INT8", "INTEGER",
 			"INTERVAL", "INTO", "IS", "ITERATE", "JOIN", "KEY", "KEYS", "KILL", "LEADING", "LEAVE", "LEFT", "LIKE", "LIMIT",
@@ -247,7 +247,7 @@ class SQL_Token {
 	 */
 	public static function get_string_literal($str) {
 		if(strlen($str) >= 2 && substr($str, 0, 1) == "'" && substr($str, -1) == "'") {
-			$str = substr($str, 1, strlen($str) - 2);
+			$str = stripslashes(substr($str, 1, strlen($str) - 2));
 		}
 		return $str;
 	}

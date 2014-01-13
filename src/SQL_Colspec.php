@@ -4,6 +4,7 @@ class SQL_Colspec {
 	public $type;
 	public $size;
 	public $values;
+	public $comment;
 
 	public function __construct($tokens) {
 		$this -> name = SQL_Token::get_identifier($tokens[0] -> str);
@@ -20,6 +21,22 @@ class SQL_Colspec {
 						$this -> size[] = SQL_Token::get_string_literal($subtoken -> str);
 					}
 				}
+			}
+		}
+		
+		/* Find comment */
+		$this -> comment = "";
+		$next = false;
+		foreach($tokens as $token) {
+			if($next) {
+				if($token -> type == SQL_Token::STRING_LITERAL) {
+					$this -> comment = trim(SQL_Token::get_string_literal($token -> str));
+					break;
+				} else {
+					break; // Not a comment. Give up.
+				}
+			} else if($token -> type == SQL_Token::IDENTIFIER && strtoupper($token -> str) == "COMMENT") {
+				$next = true;
 			}
 		}
 	}

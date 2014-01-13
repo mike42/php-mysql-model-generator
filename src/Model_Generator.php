@@ -37,10 +37,11 @@ class Model_Generator {
 		mkdir($this -> base . "/lib/controller");
 		mkdir($this -> base . "/lib/util");
 		mkdir($this -> base . "/site");
+		mkdir($this -> base . "/public");
 		copy(dirname(__FILE__) . "/template/config.php", $this -> base . "/site/config.php");
 		copy(dirname(__FILE__) . "/template/database.php", $this -> base . "/lib/util/database.php");
-		
-		// TODO: Generate main class
+		copy(dirname(__FILE__) . "/template/core.php", $this -> base . "/lib/core.php");
+		copy(dirname(__FILE__) . "/template/index.php", $this -> base . "/index.php");
 		
 		/* Generate default permissions */
 		$str = "<?php\n";
@@ -83,7 +84,8 @@ class Model_Generator {
 		$str = "<?php\nclass ".$table -> name . "_model {\n";
 		foreach($table -> cols as $col) {
 			/* Class variables */
-			$str .= "\tprivate $" . $col -> name . ";\n";
+			$str .= $this -> block_comment("@var " . $this -> primitive($col) . " " . $col -> name . ($col -> comment != ""? " " . $col -> comment: ""), 1);
+			$str .= "\tprivate $" . $col -> name . ";\n\n";
 		}
 		$str .= "\tprivate \$model_variables_changed; // Only variables which have been changed\n";
 		$str .= "\tprivate \$model_variables_set; // All variables which have been set (initially or with a setter)\n";
@@ -151,7 +153,7 @@ class Model_Generator {
 				"parent tables, and loaded child tables\n\n" . 
 				"@param string \$role The user role to use", 1);
 		$str .= "\tpublic function to_array_filtered(\$role = \"anon\") {\n";
-		// TODO
+		// TODO filter for permissions
 		$str .= "\t\t// TODO: Insert code for " . $table -> name . " permission-check\n";
 		$str .= "\t}\n";
 		
@@ -230,7 +232,7 @@ class Model_Generator {
 		/* Populate child tables */
 		if(isset($this -> rev_constraints[$table -> name]) && count($this -> rev_constraints[$table -> name]) != 0) {
 			foreach($this -> rev_constraints[$table -> name] as $child => $fk) {
-				$str .= "\n" . $this -> block_comment("Get associated rows from " . $child . " table\n\n" .
+				$str .= "\n" . $this -> block_comment("List associated rows from " . $child . " table\n\n" .
 							"@param int \$start Row to begin from. Default 0 (begin from start)\n" . 
 							"@param int \$limit Maximum number of rows to retrieve. Default -1 (no limit)", 1);
 				$str .= "\tpublic function populate_list_".$child . "(\$start = 0, \$limit = -1) {\n";
@@ -240,7 +242,9 @@ class Model_Generator {
 		}
 
 		/* Get by primary key */
-		$str .= "\n\tpublic static function get(";
+		$str .= "\n" . $this -> block_comment("Retrieve by primary key\n\n", 1);
+		// TODO: Key info
+		$str .= "\tpublic static function get(";
 		$str .= implode(", ", $this -> listFields($table, $table -> pk, true));
 		$str .= ") {\n";
 		$conditions = $arrEntry = array();
@@ -316,6 +320,22 @@ class Model_Generator {
 
 	private function make_controller(SQL_Table $table) {
 		$str = "<?php\nclass ".$table -> name . "_controller {\n";
+		// Create
+		$str .= "function create() {\n" .
+				"}\n\n";
+		
+		// Read
+		$str .= "function read() {\n" .
+				"}\n\n";
+		
+		// Update
+		$str .= "function update() {\n" .
+				"}\n\n";
+		
+		// Delete
+		$str .= "function delete() {\n" .
+			 "}\n\n";
+		
 		$str .= "}\n?>";
 		file_put_contents($this -> base . "/lib/controller/" . $table -> name . "_controller.php", $str);
 	}
