@@ -236,6 +236,9 @@ class Model_Generator {
 							"@param int \$start Row to begin from. Default 0 (begin from start)\n" . 
 							"@param int \$limit Maximum number of rows to retrieve. Default -1 (no limit)", 1);
 				$str .= "\tpublic function populate_list_".$child . "(\$start = 0, \$limit = -1) {\n";
+				for($i = 0; $i < count($fk -> child_fields); $i++) {
+					$str .= "\t\t\$".$fk -> child_fields[$i] . " = \$this -> get_".$fk -> parent_fields[$i]."();\n";
+				}
 				$str .= "\t\t\$this -> list_".$child." = ".$child . "_model::list_by_".$fk -> name ."(". implode(",", $this -> listFields($this -> database -> table[$child], $fk -> child_fields, true)) .", \$start, \$limit);\n";
 				$str .= "\t}\n";
 			}
@@ -256,6 +259,9 @@ class Model_Generator {
 		$str .= "\t\t\$sth = database::\$dbh -> prepare(\"$sql;\");\n";
 		$str .= "\t\t\$sth -> execute(array(" . implode(", ", $arrEntry) . "));\n";
 		$str .= "\t\t\$row = \$sth -> fetch(PDO::FETCH_NUM);\n";
+ 		$str .= "\t\tif(\$row === false){\n";
+		$str .= "\t\t\treturn false;\n";
+		$str .= "\t\t}\n";
 		$str .= "\t\t\$assoc = self::row_to_assoc(\$row);\n";
 		$str .= "\t\treturn new " . $table -> name . "_model(\$assoc);\n";
 		$str .= "\t}\n";
@@ -275,6 +281,9 @@ class Model_Generator {
  			$str .= "\t\t\$sth = database::\$dbh -> prepare(\"$sql;\");\n";
  			$str .= "\t\t\$sth -> execute(array(" . implode(", ", $arrEntry) . "));\n";
  			$str .= "\t\t\$row = \$sth -> fetch(PDO::FETCH_NUM);\n";
+ 			$str .= "\t\tif(\$row === false){\n";
+ 			$str .= "\t\t\treturn false;\n";
+ 			$str .= "\t\t}\n";
  			$str .= "\t\t\$assoc = self::row_to_assoc(\$row);\n";
  			$str .= "\t\treturn new " . $table -> name . "_model(\$assoc);\n";
 			$str .= "\t}\n";
