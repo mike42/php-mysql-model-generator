@@ -194,13 +194,18 @@ class Model_Generator {
 		 	"\t\t}\n\n" .
 		 	"\t\t/* Compose list of changed fields */\n" .
 		 	"\t\t\$fieldset = array();\n" .
-		 	"\t\tforeach(\$this -> model_variables_changed as \$col => \$changed) {\n" .
+		 	"\t\t\$everything = \$this -> to_array();\n";
+		foreach($table -> pk as $fieldname) {
+			$str .= "\t\t\$data['$fieldname'] = \$this -> get_$fieldname();\n";
+		}
+		$str .= "\t\tforeach(\$this -> model_variables_changed as \$col => \$changed) {\n" .
 		 	"\t\t\t\$fieldset[] = \"\$col = :\$col\";\n" .
+		 	"\t\t\t\$data[\$col] = \$everything[\$col];\n" .
 		 	"\t\t}\n" .
 		 	"\t\t\$fields = implode(\", \", \$fieldset);\n\n" .
 		 	"\t\t/* Execute query */\n";
 		$str .= "\t\t\$sth = database::\$dbh -> prepare(\"UPDATE ".$table -> name . " SET \$fields WHERE " . implode(" AND ", $pkfields). "\");\n";
-		$str .= "\t\t\$sth -> execute(\$this -> to_array());\n";
+		$str .= "\t\t\$sth -> execute(\$data);\n";
 		$str .= "\t}\n";
 
 		/* Insert */
@@ -211,22 +216,28 @@ class Model_Generator {
 		 	"\t\t}\n\n" .
 		 	"\t\t/* Compose list of set fields */\n" .
 		 	"\t\t\$fieldset = array();\n" .
+		 	"\t\t\$data = array();\n" .
+		 	"\t\t\$everything = \$this -> to_array();\n" .
 		 	"\t\tforeach(\$this -> model_variables_set as \$col => \$changed) {\n" .
 		 	"\t\t\t\$fieldset[] = \$col;\n" .
 		 	"\t\t\t\$fieldset_colon[] = \":\$col\";\n" .
+		 	"\t\t\t\$data[\$col] = \$everything[\$col];\n" .
 		 	"\t\t}\n";
 		$str .= "\t\t\$fields = implode(\", \", \$fieldset);\n" .
 			"\t\t\$vals = implode(\", \", \$fieldset_colon);\n\n" .
 			"\t\t/* Execute query */\n" .
 			"\t\t\$sth = database::\$dbh -> prepare(\"INSERT INTO ".$table -> name . " (\$fields) VALUES (\$vals);\");\n";
-		$str .= "\t\t\$sth -> execute(\$this -> to_array());\n";
+		$str .= "\t\t\$sth -> execute(\$data);\n";
 		$str .= "\t}\n";
 
 		/* Delete */
 		$str .= "\n" . $this -> block_comment("Delete " . $table -> name, 1);
 		$str .= "\tpublic function delete() {\n";
 		$str .= "\t\t\$sth = database::\$dbh -> prepare(\"DELETE FROM ".$table -> name . " WHERE " . implode(" AND ", $pkfields). "\");\n";
-		$str .= "\t\t\$sth -> execute(\$this -> to_array());\n";
+		foreach($table -> pk as $fieldname) {
+			$str .= "\t\t\$data['$fieldname'] = \$this -> get_$fieldname();\n";
+		}
+		$str .= "\t\t\$sth -> execute(\$data);\n";
 		$str .= "\t}\n";
 
 		/* Populate child tables */
@@ -245,7 +256,7 @@ class Model_Generator {
 		}
 
 		/* Get by primary key */
-		$str .= "\n" . $this -> block_comment("Retrieve by primary key\n\n", 1);
+		$str .= "\n" . $this -> block_comment("Retrieve by primary key", 1);
 		// TODO: Key info
 		$str .= "\tpublic static function get(";
 		$str .= implode(", ", $this -> listFields($table, $table -> pk, true));
@@ -268,7 +279,8 @@ class Model_Generator {
 
 		/* Get by unique indices */
 		foreach($table -> unique as $unique) {
-			$str .= "\n\tpublic static function get_by_".$unique -> name."(";
+			$str .= "\n" . $this -> block_comment("Retrieve by " . $unique -> name, 1);
+			$str .= "\tpublic static function get_by_".$unique -> name."(";
 			$str .= implode(", ", $this -> listFields($table, $unique -> fields, true));
 			$str .= ") {\n";
  			$conditions = $arrEntry = array();
