@@ -31,17 +31,12 @@ class Model_Generator {
 		if(file_exists($this -> base)) {
 			throw new Exception("Cannot save to " . $this -> base . ", a file/folder exists there.");
 		}
-		mkdir($this -> base);
-		mkdir($this -> base . "/lib");
+		
+		$cmd = sprintf("cp -R %s %s", dirname(__FILE__) . "/template", $this -> base);
+		system($cmd);
+		
 		mkdir($this -> base . "/lib/model");
 		mkdir($this -> base . "/lib/controller");
-		mkdir($this -> base . "/lib/util");
-		mkdir($this -> base . "/site");
-		mkdir($this -> base . "/public");
-		copy(dirname(__FILE__) . "/template/config.php", $this -> base . "/site/config.php");
-		copy(dirname(__FILE__) . "/template/database.php", $this -> base . "/lib/util/database.php");
-		copy(dirname(__FILE__) . "/template/core.php", $this -> base . "/lib/core.php");
-		copy(dirname(__FILE__) . "/template/index.php", $this -> base . "/index.php");
 		
 		/* Generate default permissions */
 		$str = "<?php\n";
@@ -152,10 +147,20 @@ class Model_Generator {
 		$str .= "\n" . $this -> block_comment("Convert " . $table -> name . " to associative array, including only visible fields,\n" .
 				"parent tables, and loaded child tables\n\n" . 
 				"@param string \$role The user role to use", 1);
-		$str .= "\tpublic function to_array_filtered(\$role = \"anon\") {\n";
-		// TODO filter for permissions
-		$str .= "\t\t// TODO: Insert code for " . $table -> name . " permission-check\n";
-		$str .= "\t}\n";
+		$str .= "\tpublic function to_array_filtered(\$role = \"anon\") {\n" .
+			"\t\tif(core::\$permission[\$role]['" . $table -> name ."']['read'] === false) {\n" . 
+			"\t\t\treturn false;\n" .
+			"\t\t}\n" .
+			"\t\t\$values = array();\n" .
+			"\t\t\$everything = \$this -> to_array();\n" .
+			"\t\tforeach(core::\$permission[\$role]['" . $table -> name ."']['read'] as \$field) {\n" .
+			"\t\t\tif(!isset(\$everything[\$field])) {\n" .
+			"\t\t\t\tthrow new Exception(\"Check permissions: '\$field' is not a real field in " . $table -> name ."\");\n" .
+			"\t\t\t}\n" .
+			"\t\t\t\$values[\$field] = \$everything[\$field];\n" .
+			"\t\t}\n" .
+			"\t\treturn \$values;\n" .
+			"\t}\n";
 		
 		/* From array('foo', 'bar', 'baz') to array('a.weeble' => 'foo', 'a.warble' => bar, 'b.beeble' => 'baz') */
 		$str .= "\n" . $this -> block_comment("Convert retrieved database row from numbered to named keys, including table name\n\n@param array \$row ror retrieved from database\n@return array row with indices", 1);
@@ -340,24 +345,35 @@ class Model_Generator {
 	}
 
 	private function make_controller(SQL_Table $table) {
+		$pkfields = $this -> listFields($table, $table -> pk, true);
 		$str = "<?php\nclass ".$table -> name . "_controller {\n";
 		// Create
-		$str .= "function create() {\n" .
-				"}\n\n";
+		$str .= "\tfunction create() {\n";
+		$str .=	"\t\n";
+		$str .=	"\t}\n\n";
 		
 		// Read
-		$str .= "function read() {\n" .
-				"}\n\n";
+		$str .= "\tfunction read(" . implode(",", $pkfields) . ") {\n";
+		$str .= "\t\t\$". $table -> name . " = " . $table -> name . "_model::get(" . implode(",", $pkfields) . ");\n";
+		$str .= "\t\tif(\$".$table -> name . ") {\n";
+		$str .= "\t\t\treturn array('error' => '" . $table -> name . " not found');\n";
+		$str .= "\t\t}\n";
+		
+		$str .= "\t\t\$" . $table -> name . " = '';\n";
+		$str .=	"\t}\n\n";
 		
 		// Update
-		$str .= "function update() {\n" .
-				"}\n\n";
+		$str .= "\tfunction update(" . implode(",", $pkfields) . ") {\n";
+		// TODO
+		$str .=	"\t}\n\n";
 		
 		// Delete
-		$str .= "function delete() {\n" .
-			 "}\n\n";
+		$str .= "\tfunction delete() {\n";
+		// TODO
+		$str .=	"\t}\n";
 		
 		$str .= "}\n?>";
+		
 		file_put_contents($this -> base . "/lib/controller/" . $table -> name . "_controller.php", $str);
 	}
 	
