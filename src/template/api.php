@@ -58,20 +58,7 @@ try {
 		core::fizzle("Controller '$controllerClassName' does not have method '$controllerMethodName'");
 	}
 	$ret = call_user_func_array(array($controllerClassName, $controllerMethodName), $arg);
-
-	if(isset($ret['view'])) {
-		$viewMethodName = $ret['view'] . "_" . $fmt;
-	} elseif(isset($ret['error'])) {
-		$viewMethodName = 'error' . "_" . $fmt;
-	} elseif(isset($ret['redirect'])) {
-		core::redirect($ret['redirect']);
-	}
-
-	/* Run view code */
-	if(!is_callable($viewClassName . "::" .$viewMethodName)) {
-		core::fizzle("View '$viewClassName' does not have method '$viewMethodName'");
-	}
-	$ret = call_user_func_array(array($viewClassName, $viewMethodName), array($ret));
+	echo json_encode($ret);
 } catch(Exception $e) {
 	core::fizzle("Failed to run controller: " . $e);
 }

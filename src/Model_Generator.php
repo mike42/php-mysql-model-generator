@@ -113,6 +113,25 @@ class Model_Generator {
 			}
 		}
 
+		/* Init and load related tables */
+		$str .= "\n" . $this -> block_comment("Initialise and load related tables", 1);
+		$str .= "\tpublic static function init() {\n";
+		$str .= "\t\tcore::loadClass(\"database\");\n";
+		if(count($table -> constraints) != 0) {
+			foreach($table -> constraints as $fk) {
+				if($fk -> parent_table != $table -> name) { // Tables which reference themselves do not go well with this!
+					$str .= "\t\tcore::loadClass(\"".$fk -> parent_table . "_model\");\n";
+				}
+			}
+		}
+		if(isset($this -> rev_constraints[$table -> name]) && count($this -> rev_constraints[$table -> name]) != 0) {
+			$str .= "\n\t\t/* Child tables */\n";
+			foreach($this -> rev_constraints[$table -> name] as $child => $fk) {
+				$str .= "\t\tcore::loadClass(\"".$child . "_model\");\n";
+			}
+		}
+		$str .= "\t}\n";
+		
 		/* Constructor */
 		$str .= "\n" . $this -> block_comment("Construct new " . $table -> name . " from field list\n\n@return array", 1);
 		$str .= "\tpublic function __construct(array \$fields = array()) {\n";
@@ -128,6 +147,11 @@ class Model_Generator {
 		foreach($table -> constraints as $fk) {
 			if($fk -> parent_table != $table -> name) { // Tables which reference themselves do not go well with this
 				$str .= "\t\t\$this -> ".$fk -> parent_table . " = new " . $fk -> parent_table . "_model(\$fields);\n";
+			}
+		}
+		if(isset($this -> rev_constraints[$table -> name]) && count($this -> rev_constraints[$table -> name]) != 0) {
+			foreach($this -> rev_constraints[$table -> name] as $child => $fk) {
+				$str .= "\t\t\$this -> list_".$child . " = array();\n";
 			}
 		}
 		$str .= "\t}\n";
@@ -158,8 +182,27 @@ class Model_Generator {
 			"\t\t\t\tthrow new Exception(\"Check permissions: '\$field' is not a real field in " . $table -> name ."\");\n" .
 			"\t\t\t}\n" .
 			"\t\t\t\$values[\$field] = \$everything[\$field];\n" .
-			"\t\t}\n" .
-			"\t\treturn \$values;\n" .
+			"\t\t}\n";
+		/* List out parent tables */
+		if(count($table -> constraints) != 0) {
+			foreach($table -> constraints as $fk) {
+				if($fk -> parent_table != $table -> name) { // Tables which reference themselves do not go well with this!
+					$str .= "\t\t\$values['".$fk -> parent_table . "'] = \$this -> ". $fk -> parent_table. " -> to_array_filtered(\$role);\n";
+				}
+			}
+		}
+		if(isset($this -> rev_constraints[$table -> name]) && count($this -> rev_constraints[$table -> name]) != 0) {
+			$str .= "\n\t\t/* Add filtered versions of everything that's been loaded */\n";
+			foreach($this -> rev_constraints[$table -> name] as $child => $fk) {
+				$str .= "\t\t\$values['$child'] = array();\n";
+			}
+			foreach($this -> rev_constraints[$table -> name] as $child => $fk) {
+				$str .= "\t\tforeach(\$this -> list_".$child . " as \$$child) {\n";
+				$str .= "\t\t\t\$values['$child'][] = \$$child -> to_array_filtered(\$role);\n";
+				$str .= "\t\t}\n";
+			}
+		}
+		$str .=	"\t\treturn \$values;\n" .
 			"\t}\n";
 		
 		/* From array('foo', 'bar', 'baz') to array('a.weeble' => 'foo', 'a.warble' => bar, 'b.beeble' => 'baz') */
@@ -347,28 +390,40 @@ class Model_Generator {
 	private function make_controller(SQL_Table $table) {
 		$pkfields = $this -> listFields($table, $table -> pk, true);
 		$str = "<?php\nclass ".$table -> name . "_controller {\n";
+		
 		// Create
-		$str .= "\tfunction create() {\n";
+		$str .= "\tpublic static function init() {\n";
+		$str .=	"\t\tcore::loadClass(\"session\");\n";
+		$str .=	"\t}\n\n";
+		
+		// Create
+		$str .= "\tpublic static function create() {\n";
 		$str .=	"\t\n";
 		$str .=	"\t}\n\n";
 		
 		// Read
-		$str .= "\tfunction read(" . implode(",", $pkfields) . ") {\n";
+		$str .= "\tpublic static function read(" . implode(",", $pkfields) . ") {\n";
 		$str .= "\t\t\$". $table -> name . " = " . $table -> name . "_model::get(" . implode(",", $pkfields) . ");\n";
 		$str .= "\t\tif(\$".$table -> name . ") {\n";
 		$str .= "\t\t\treturn array('error' => '" . $table -> name . " not found');\n";
 		$str .= "\t\t}\n";
 		
-		$str .= "\t\t\$" . $table -> name . " = '';\n";
+		if(isset($this -> rev_constraints[$table -> name]) && count($this -> rev_constraints[$table -> name]) != 0) {
+			foreach($this -> rev_constraints[$table -> name] as $child => $fk) {
+				$str .= "\t\t// \$" . $table -> name . " -> populate_list_".$child . "();\n";
+			}
+		}
+	
+		$str .= "\t\treturn $" . $table -> name . " -> to_array_filtered(session::getRole());\n";
 		$str .=	"\t}\n\n";
 		
 		// Update
-		$str .= "\tfunction update(" . implode(",", $pkfields) . ") {\n";
+		$str .= "\tpublic static function update(" . implode(",", $pkfields) . ") {\n";
 		// TODO
 		$str .=	"\t}\n\n";
 		
 		// Delete
-		$str .= "\tfunction delete() {\n";
+		$str .= "\tpublic static function delete() {\n";
 		// TODO
 		$str .=	"\t}\n";
 		
