@@ -6,7 +6,7 @@ core::loadClass("database");
 $config['host']						= isset($_SERVER['HTTP_HOST'])? $_SERVER['HTTP_HOST'] : 'localhost';
 $config['webroot']					= isset($_SERVER['HTTP_HOST'])? 'http://'.$_SERVER['HTTP_HOST'].'/' : '';
 $config['default']['controller']	= 'Page';
-$config['default']['action']		= 'view';
+$config['default']['action']		= 'read';
 $config['default']['arg']		= array('home');
 $config['default']['format']		= 'html';
 Core::$config = $config;
@@ -35,7 +35,6 @@ if(count($arg) > 2) {
 	/* $controller/$action/{foo/bar/baz}.quux */
 	$controller = array_shift($arg);
 	$action = array_shift($arg);
-
 } elseif(count($arg) == 2) {
 	/* No action specified - $controller/(default action)/{foo}.quux */
 	$controller = array_shift($arg);
@@ -51,14 +50,16 @@ try {
 	$controllerClassName = $controller.'_controller';
 	$controllerMethodName = $action;
 	core::loadClass($controllerClassName);
-	$viewMethodName = $action . "_" . $fmt;
-	$viewClassName = $controller.'_view';
-	core::loadClass($viewClassName);
 	if(!is_callable($controllerClassName . "::" . $controllerMethodName)) {
-		core::fizzle("Controller '$controllerClassName' does not have method '$controllerMethodName'");
+		core::fizzle("Controller '$controllerClassName' does not have method '$controllerMethodName'", '404');
 	}
 	$ret = call_user_func_array(array($controllerClassName, $controllerMethodName), $arg);
-	echo json_encode($ret);
+	if(isset($ret['error'])) {
+		/* Something went wrong */
+		core::fizzle($ret['error'], isset($ret['code']) ? $ret['code'] : '500');
+	} else {
+		echo json_encode($ret);
+	}
 } catch(Exception $e) {
-	core::fizzle("Failed to run controller: " . $e);
+	core::fizzle("Failed to run controller: " . $e -> getMessage(), '500');
 }

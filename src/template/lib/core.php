@@ -112,14 +112,20 @@ class core {
 		return preg_replace("#[^-a-zA-Z0-9]+#", "_", $inp);
 	}
 
-	public static function fizzle($message) {
-		header("HTTP/1.1 500 Internal Server Error");
-		self::showHTML(array('layout' => 'htmlLayout', 'template' => 'error', 'error' => $message));
+	public static function fizzle($message, $code=500) {
+		switch($code) {
+			case "403":
+				header("HTTP/1.1 403 Forbidden");
+				break;
+			case "404":
+				header("HTTP/1.1 404 Not Found");
+				break;
+			case "500":
+			default:
+				header("HTTP/1.1 500 Internal Server Error");
+		}
+		echo json_encode(array("error" => $message));
 		exit(0);
-	}
-
-	public static function showHTML($data) {
-		include(dirname(__FILE__) . "/view/html/" . $data['layout'] . ".inc");
 	}
 
 	public function redirect($location) {
@@ -128,7 +134,7 @@ class core {
 	
 	public static function init() {
 		/* Load permissions */
-		include(dirname(__FILE__) . "/../site/permission.php");
+		include(dirname(__FILE__) . "/../site/permissions.php");
 		self::$permission = $permission;
 	}
 }

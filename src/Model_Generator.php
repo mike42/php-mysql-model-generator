@@ -389,37 +389,85 @@ class Model_Generator {
 
 	private function make_controller(SQL_Table $table) {
 		$pkfields = $this -> listFields($table, $table -> pk, true);
+		$field_array = array();
+		$nonpk_field_array = array();
+		
+		foreach($table -> cols as $col) {
+			if(!in_array($col -> name, $table -> pk)) {
+				$nonpk_field_array[] = "'" . $col -> name . "'";
+			}
+			$field_array[] = "'" . $col -> name . "'";
+		}
+		
 		$str = "<?php\nclass ".$table -> name . "_controller {\n";
 		
-		// Create
+		// Init
 		$str .= "\tpublic static function init() {\n";
 		$str .=	"\t\tcore::loadClass(\"session\");\n";
+		$str .=	"\t\tcore::loadClass(\"".$table -> name . "_model\");\n";
 		$str .=	"\t}\n\n";
-		
+
 		// Create
 		$str .= "\tpublic static function create() {\n";
-		$str .=	"\t\n";
+		$str .= "\t\t/* Check permission */\n";
+		$str .= "\t\t\$role = session::getRole();\n";
+		$str .= "\t\tif(!isset(core::\$permission[\$role]['" . $table -> name . "']['create']) || core::\$permission[\$role]['" . $table -> name . "']['create'] != true) {\n";
+		$str .= "\t\t\treturn array('error' => 'You do not have permission to do that', 'code' => '403');\n";
+		$str .= "\t\t}\n\n";
+		$str .= "\t\t/* Find fields to insert */\n";
+		$str .= "\t\t\$fields = array(".implode(", ", $field_array).");\n";
+		$str .= "\t\t\$init = array();\n";
+		$str .= "\t\tforeach(\$fields as \$field) {\n";
+		$str .= "\t\t\tif(isset(\$_POST[\$field])) {\n";
+		$str .= "\t\t\t\t\$init[\"" . $table -> name . ".\$field\"] = \$_POST[\$field];\n";
+		$str .=	"\t\t\t}\n";
+		$str .= "\t\t}\n";
+		$str .= "\t\t\$" . $table -> name . " = new " . $table -> name . "_model(\$init);\n";
+		$str .= "\t\t\$" . $table -> name . " -> insert();\n";
+		$str .= "\t\treturn $" . $table -> name . " -> to_array_filtered(\$role);\n";
 		$str .=	"\t}\n\n";
-		
+
 		// Read
 		$str .= "\tpublic static function read(" . implode(",", $pkfields) . ") {\n";
+		$str .= "\t\t/* Check permission */\n";
+		$str .= "\t\t\$role = session::getRole();\n";
+		$str .= "\t\tif(!isset(core::\$permission[\$role]['" . $table -> name . "']['read']) || count(core::\$permission[\$role]['" . $table -> name . "']['read']) == 0) {\n";
+		$str .= "\t\t\treturn array('error' => 'You do not have permission to do that', 'code' => '403');\n";
+		$str .= "\t\t}\n\n";
+		$str .= "\t\t/* Load ". $table -> name . " */\n";
 		$str .= "\t\t\$". $table -> name . " = " . $table -> name . "_model::get(" . implode(",", $pkfields) . ");\n";
-		$str .= "\t\tif(\$".$table -> name . ") {\n";
+		$str .= "\t\tif(!\$".$table -> name . ") {\n";
 		$str .= "\t\t\treturn array('error' => '" . $table -> name . " not found');\n";
 		$str .= "\t\t}\n";
-		
 		if(isset($this -> rev_constraints[$table -> name]) && count($this -> rev_constraints[$table -> name]) != 0) {
 			foreach($this -> rev_constraints[$table -> name] as $child => $fk) {
 				$str .= "\t\t// \$" . $table -> name . " -> populate_list_".$child . "();\n";
 			}
 		}
-	
-		$str .= "\t\treturn $" . $table -> name . " -> to_array_filtered(session::getRole());\n";
+		$str .= "\t\treturn $" . $table -> name . " -> to_array_filtered(\$role);\n";
 		$str .=	"\t}\n\n";
-		
+
 		// Update
 		$str .= "\tpublic static function update(" . implode(",", $pkfields) . ") {\n";
-		// TODO
+		$str .= "\t\t/* Check permission */\n";
+		$str .= "\t\t\$role = session::getRole();\n";
+		$str .= "\t\tif(!isset(core::\$permission[\$role]['" . $table -> name . "']['update']) || count(core::\$permission[\$role]['" . $table -> name . "']['update']) == 0) {\n";
+		$str .= "\t\t\treturn array('error' => 'You do not have permission to do that', 'code' => '403');\n";
+		$str .= "\t\t}\n\n";
+		$str .= "\t\t/* Load ". $table -> name . " */\n";
+		$str .= "\t\t\$". $table -> name . " = " . $table -> name . "_model::get(" . implode(",", $pkfields) . ");\n";
+		$str .= "\t\tif(!\$".$table -> name . ") {\n";
+		$str .= "\t\t\treturn array('error' => '" . $table -> name . " not found');\n";
+		$str .= "\t\t}\n\n";
+		$str .= "\t\t\$update = false;\n";
+		foreach($table -> cols as $col) {
+			if(!in_array($col -> name, $table -> pk)) { /* Primary keys can't be updated with this */
+				$str .= "\t\tif(isset(\$_POST['" . $col -> name . "']) && in_array('" . $col -> name . "', core::\$permission[\$role]['" . $table -> name . "']['update'])) {\n";
+				$str .= "\t\t\t\$" . $table -> name . " -> set_" . $col -> name . "(\$_POST['" . $col -> name . "']);\n";
+				$str .=	"\t\t}\n";
+			}
+		}
+		$str .= "\t\t\$".$table -> name . " -> update();\n";
 		$str .=	"\t}\n\n";
 		
 		// Delete
