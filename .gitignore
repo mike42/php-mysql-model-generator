@@ -8,4 +8,7 @@ examples/*
 
 # temp and hidden files
 *~
-.*
+
+# Eclipse files
+.settings/*
+.project
