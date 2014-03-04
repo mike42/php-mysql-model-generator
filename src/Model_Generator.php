@@ -25,6 +25,7 @@ class Model_Generator {
 			$this -> make_model($table);
 			$this -> make_controller($table);
 		}
+		$this -> backbone_models($this -> database);
 	}
 
 	private function make_app_skeleton() {
@@ -36,7 +37,6 @@ class Model_Generator {
 		system($cmd);
 		
 		mkdir($this -> base . "/lib/model");
-		mkdir($this -> base . "/lib/controller");
 		
 		/* Generate default permissions */
 		$str = "<?php\n";
@@ -136,6 +136,12 @@ class Model_Generator {
 		$str .= "\n" . $this -> block_comment("Construct new " . $table -> name . " from field list\n\n@return array", 1);
 		$str .= "\tpublic function __construct(array \$fields = array()) {\n";
 		if(count($table -> cols) != 0) {
+			$str .= "/* Initialise everything as blank to avoid tripping up the permissions fitlers */\n";
+			foreach($table -> cols as $col) {
+				$str .= "\t\t\$this -> " . $col -> name . " = '';\n";
+			}
+			$str .= "\n";
+			
 			foreach($table -> cols as $col) {
 				$str .= "\t\tif(isset(\$fields['" . $table -> name . "." . $col -> name . "'])) {\n" .
 					"\t\t\t\$this -> set_" . $col -> name . "(\$fields['" . $table -> name . "." . $col -> name . "']);\n" .
@@ -259,7 +265,7 @@ class Model_Generator {
 		/* Insert */
 		$str .= "\n" . $this -> block_comment("Add new " . $table -> name, 1);
 		$str .= "\tpublic function insert() {\n" .
-		 	"\t\tif(count(\$this -> model_variables_changed) == 0) {\n" .
+		 	"\t\tif(count(\$this -> model_variables_set) == 0) {\n" .
 		 	"\t\t\tthrow new Exception(\"No fields have been set!\");\n" .
 		 	"\t\t}\n\n" .
 		 	"\t\t/* Compose list of set fields */\n" .
@@ -276,6 +282,9 @@ class Model_Generator {
 			"\t\t/* Execute query */\n" .
 			"\t\t\$sth = database::\$dbh -> prepare(\"INSERT INTO ".$table -> name . " (\$fields) VALUES (\$vals);\");\n";
 		$str .= "\t\t\$sth -> execute(\$data);\n";
+		if(count($table -> pk) == 1) {
+			$str .= "\t\t\$this -> set_" . $table -> pk[0]. "(database::\$dbh->lastInsertId());\n";
+		}
 		$str .= "\t}\n";
 
 		/* Delete */
@@ -417,14 +426,38 @@ class Model_Generator {
 		$str .= "\t\t/* Find fields to insert */\n";
 		$str .= "\t\t\$fields = array(".implode(", ", $field_array).");\n";
 		$str .= "\t\t\$init = array();\n";
+		$str .= "\t\t\$received = json_decode(file_get_contents('php://input'), true, 2);\n";
 		$str .= "\t\tforeach(\$fields as \$field) {\n";
-		$str .= "\t\t\tif(isset(\$_POST[\$field])) {\n";
-		$str .= "\t\t\t\t\$init[\"" . $table -> name . ".\$field\"] = \$_POST[\$field];\n";
+		$str .= "\t\t\tif(isset(\$received[\$field])) {\n";
+		$str .= "\t\t\t\t\$init[\"" . $table -> name . ".\$field\"] = \$received[\$field];\n";
 		$str .=	"\t\t\t}\n";
 		$str .= "\t\t}\n";
-		$str .= "\t\t\$" . $table -> name . " = new " . $table -> name . "_model(\$init);\n";
-		$str .= "\t\t\$" . $table -> name . " -> insert();\n";
-		$str .= "\t\treturn $" . $table -> name . " -> to_array_filtered(\$role);\n";
+		$str .= "\t\t\t\$" . $table -> name . " = new " . $table -> name . "_model(\$init);\n\n";
+		if(count($table -> constraints) != 0) {
+			$str .= "\t\t/* Check parent tables */\n";
+			foreach($table -> constraints as $fk) {
+				if($fk -> parent_table != $table -> name) {
+					if($this -> field_match($fk -> parent_fields, $this -> database -> table[$fk -> parent_table] -> pk)) {
+						$f = array();
+						foreach($fk -> child_fields as $a) {
+							$f[] = "\$" . $table -> name . " -> get_$a";
+						}
+						$str .= "\t\tif(!".$fk -> parent_table . "_model::get(" . implode(", ", $f) . "())) {\n";
+						$str .= "\t\t\treturn array('error' => 'Cannot add because related " . $fk -> parent_table . " does not exist', 'code' => '400');\n";
+						$str .= "\t\t}\n";
+					}
+				}
+			}
+		}
+		$str .=	"\n";
+		
+		$str .= "\t\t/* Insert new row */\n";
+		$str .= "\t\ttry {\n";
+		$str .= "\t\t\t\$" . $table -> name . " -> insert();\n";
+		$str .= "\t\t\treturn $" . $table -> name . " -> to_array_filtered(\$role);\n";
+		$str .= "\t\t} catch(Exception \$e) {\n";
+		$str .= "\t\t\treturn array('error' => 'Failed to add to database', 'code' => '500');\n";
+		$str .= "\t\t}\n";
 		$str .=	"\t}\n\n";
 
 		// Read
@@ -459,25 +492,104 @@ class Model_Generator {
 		$str .= "\t\tif(!\$".$table -> name . ") {\n";
 		$str .= "\t\t\treturn array('error' => '" . $table -> name . " not found');\n";
 		$str .= "\t\t}\n\n";
+		$str .= "\t\t/* Find fields to update */\n";
 		$str .= "\t\t\$update = false;\n";
+		$str .= "\t\t\$received = json_decode(file_get_contents('php://input'), true);\n";
 		foreach($table -> cols as $col) {
 			if(!in_array($col -> name, $table -> pk)) { /* Primary keys can't be updated with this */
-				$str .= "\t\tif(isset(\$_POST['" . $col -> name . "']) && in_array('" . $col -> name . "', core::\$permission[\$role]['" . $table -> name . "']['update'])) {\n";
-				$str .= "\t\t\t\$" . $table -> name . " -> set_" . $col -> name . "(\$_POST['" . $col -> name . "']);\n";
+				$str .= "\t\tif(isset(\$received['" . $col -> name . "']) && in_array('" . $col -> name . "', core::\$permission[\$role]['" . $table -> name . "']['update'])) {\n";
+				$str .= "\t\t\t\$" . $table -> name . " -> set_" . $col -> name . "(\$received['" . $col -> name . "']);\n";
 				$str .=	"\t\t}\n";
 			}
 		}
-		$str .= "\t\t\$".$table -> name . " -> update();\n";
+		$str .=	"\n";
+		$str .= "\t\t/* Update the row */\n";
+		$str .= "\t\ttry {\n";
+		$str .= "\t\t\t\$" . $table -> name . " -> update();\n";
+		$str .= "\t\t\treturn $" . $table -> name . " -> to_array_filtered(\$role);\n";
+		$str .= "\t\t} catch(Exception \$e) {\n";
+		$str .= "\t\t\treturn array('error' => 'Failed to update row', 'code' => '500');\n";
+		$str .= "\t\t}\n";
 		$str .=	"\t}\n\n";
 		
 		// Delete
-		$str .= "\tpublic static function delete() {\n";
-		// TODO
+		$str .= "\tpublic static function delete(" . implode(",", $pkfields) . ") {\n";
+		$str .= "\t\t/* Check permission */\n";
+		$str .= "\t\t\$role = session::getRole();\n";
+		$str .= "\t\tif(!isset(core::\$permission[\$role]['" . $table -> name . "']['delete']) || core::\$permission[\$role]['" . $table -> name . "']['delete'] != true) {\n";
+		$str .= "\t\t\treturn array('error' => 'You do not have permission to do that', 'code' => '403');\n";
+		$str .= "\t\t}\n\n";
+				
+		$str .= "\t\t/* Load ". $table -> name . " */\n";
+		$str .= "\t\t\$". $table -> name . " = " . $table -> name . "_model::get(" . implode(",", $pkfields) . ");\n";
+		$str .= "\t\tif(!\$".$table -> name . ") {\n";
+		$str .= "\t\t\treturn array('error' => '" . $table -> name . " not found');\n";
+		$str .= "\t\t}\n\n";
+		if(isset($this -> rev_constraints[$table -> name]) && count($this -> rev_constraints[$table -> name]) != 0) {
+			$str .= "\t\t/* Check for child rows */\n";
+			foreach($this -> rev_constraints[$table -> name] as $child => $fk) {
+				$str .= "\t\t\$" . $table -> name . " -> populate_list_".$child . "(0, 1);\n";
+				$str .= "\t\tif(count(\$" . $table -> name . " -> list_".$child . ") > 0) {\n";
+				$str .= "\t\t\treturn array('error' => 'Cannot delete " . $table -> name . " because of a related " . $child . " entry', 'code' => '400');\n";
+				$str .= "\t\t}\n";
+			}
+		}
+		$str .= "\n";
+		$str .= "\t\t/* Delete it */\n";
+		$str .= "\t\ttry {\n";
+		$str .= "\t\t\t\$". $table -> name . " -> delete();\n";
+		$str .= "\t\t\treturn array('success' => 'yes');\n";
+		$str .= "\t\t} catch(Exception \$e) {\n";
+		$str .= "\t\t\treturn array('error' => 'Failed to delete', 'code' => '500');\n";
+		$str .= "\t\t}\n";
 		$str .=	"\t}\n";
 		
+		/* End file */
 		$str .= "}\n?>";
 		
 		file_put_contents($this -> base . "/lib/controller/" . $table -> name . "_controller.php", $str);
+	}
+	
+	private function backbone_models(SQL_Database $database) {
+		$str = "";
+		foreach($database -> table as $name => $table) {
+			if(count($table -> pk) == 1) {
+				$str .= $this -> backbone_model($table);
+			}
+		}
+		file_put_contents($this -> base . "/public/js/models.js", $str);
+	}
+	
+	private function backbone_model(SQL_Table $table) {
+		$str = "";
+		$str .= "/* " . $table -> name . " */\n";
+		$str .= $table -> name . "_model = Backbone.Model.extend({\n";
+		$str .= "\turlRoot: '/" . $this -> database -> name . "/api/" . $table -> name . "',\n";
+
+		if($table -> pk[0] != 'id') {
+			$str .= "\tidAttribute: '" . $table -> pk[0] . "',\n";
+		}
+
+		/* Defaults */
+		$str .= "\tdefaults: {\n";
+		$defaults = array();
+		foreach($table -> cols as $col) {
+			if($col -> name != $table -> pk[0]) {
+				switch($col -> type) {
+					case 'INT':
+						$a = "0";
+						break;
+					default:
+						$a = "''";
+				}
+				$defaults[] = "\t\t" . $col -> name . ": $a";
+			}
+		}
+		$str .= implode(",\n", $defaults);
+		$str .= "\n\t}\n";
+		
+		$str .= "});\n\n";
+		return $str;
 	}
 	
 	private function listFields(SQL_Table $table, $fields = false, $php = false) {
@@ -548,7 +660,7 @@ class Model_Generator {
 				return $index -> name;
 			}
 		}
-		print_r($child_fields); print_r($table);
+		//print_r($child_fields); print_r($table);
 		return false;
 	}
 

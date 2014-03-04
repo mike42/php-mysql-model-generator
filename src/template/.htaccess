@@ -4,4 +4,4 @@ RewriteCond %{DOCUMENT_ROOT}/%{REQUEST_FILENAME} !-f
 RewriteCond %{DOCUMENT_ROOT}/%{REQUEST_FILENAME} !-d
 
 # Handle stylesheets and scripts
-RewriteRule ^?api/(.*)$ /api.php?p=$1 [PT,L,QSA]
+RewriteRule ^api/(.*)$ api.php?p=$1 [PT,L,QSA]

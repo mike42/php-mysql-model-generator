@@ -6,7 +6,22 @@ core::loadClass("database");
 $config['host']						= isset($_SERVER['HTTP_HOST'])? $_SERVER['HTTP_HOST'] : 'localhost';
 $config['webroot']					= isset($_SERVER['HTTP_HOST'])? 'http://'.$_SERVER['HTTP_HOST'].'/' : '';
 $config['default']['controller']	= 'Page';
-$config['default']['action']		= 'read';
+
+/* Map HTTP reuest types to methods */
+switch($_SERVER['REQUEST_METHOD']) {
+	case 'GET':
+		$config['default']['action']		= 'read';
+		break;
+	case 'POST':
+		$config['default']['action']		= 'create';
+		break;
+	case 'PUT':
+		$config['default']['action']		= 'update';
+		break;
+	case 'DELETE':
+		$config['default']['action']		= 'delete';
+		break;	
+}
 $config['default']['arg']		= array('home');
 $config['default']['format']		= 'html';
 Core::$config = $config;
@@ -41,9 +56,12 @@ if(count($arg) > 2) {
 	$action = $config['default']['action'];
 } elseif(count($arg) == 1) {
 	/* No action or controller */
-	$controller = $config['default']['controller'];
+	$controller = array_shift($arg);
 	$action = $config['default']['action'];
 }
+// Some dummy arguments to avoid undefined warnings
+$arg[] = '';
+$arg[] = '';
 
 /* Figure out class and method name */
 try {
