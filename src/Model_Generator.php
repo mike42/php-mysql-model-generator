@@ -358,6 +358,29 @@ class Model_Generator {
 			$str .= "\t}\n";
 		}
 
+		/* List with no particular criteria */
+		$str .= "\n" . $this -> block_comment("List all rows\n\n" .
+				"@param int \$start Row to begin from. Default 0 (begin from start)\n" .
+				"@param int \$limit Maximum number of rows to retrieve. Default -1 (no limit)", 1);
+		$str .= "\tpublic static function list_all(\$start = 0, \$limit = -1) {\n";
+		$str .= "\t\t\$ls = \"\";\n" .
+				"\t\t\$start = (int)\$start;\n" .
+				"\t\t\$limit = (int)\$limit;\n" .
+				"\t\tif(\$start > 0 && \$limit > 0) {\n" .
+				"\t\t\t\$ls = \" LIMIT \$start, \" . (\$start + \$limit);\n" .
+				"\t\t}\n";
+		$sql = "SELECT " . implode(", ", $join['fields']) . " FROM " . $table -> name . " " . $join['clause'];
+		$str .= "\t\t\$sth = database::\$dbh -> prepare(\"$sql\" . \$ls . \";\");\n";
+		$str .= "\t\t\$sth -> execute();\n";
+		$str .= "\t\t\$rows = \$sth -> fetchAll(PDO::FETCH_NUM);\n" .
+				"\t\t\$ret = array();\n" .
+				"\t\tforeach(\$rows as \$row) {\n" .
+				"\t\t\t\$assoc = self::row_to_assoc(\$row);\n" .
+				"\t\t\t\$ret[] = new " . $table -> name . "_model(\$assoc);\n" .
+				"\t\t}\n" .
+				"\t\treturn \$ret;\n";
+		$str .= "\t}\n";
+		
 		/* List by other indices */
 		foreach($table -> index as $index) {
 			$str .= "\n" . $this -> block_comment("List rows by " . $index -> name . " index\n\n" .
@@ -390,6 +413,9 @@ class Model_Generator {
 					"\t\treturn \$ret;\n";
 			$str .= "\t}\n";
 		}
+		
+		/* Search by text fields */
+		// TODO
 
 		/* Finalise and output */
 		$str .= "}\n?>";
@@ -433,23 +459,7 @@ class Model_Generator {
 		$str .=	"\t\t\t}\n";
 		$str .= "\t\t}\n";
 		$str .= "\t\t\t\$" . $table -> name . " = new " . $table -> name . "_model(\$init);\n\n";
-		if(count($table -> constraints) != 0) {
-			$str .= "\t\t/* Check parent tables */\n";
-			foreach($table -> constraints as $fk) {
-				if($fk -> parent_table != $table -> name) {
-					if($this -> field_match($fk -> parent_fields, $this -> database -> table[$fk -> parent_table] -> pk)) {
-						$f = array();
-						foreach($fk -> child_fields as $a) {
-							$f[] = "\$" . $table -> name . " -> get_$a";
-						}
-						$str .= "\t\tif(!".$fk -> parent_table . "_model::get(" . implode(", ", $f) . "())) {\n";
-						$str .= "\t\t\treturn array('error' => 'Cannot add because related " . $fk -> parent_table . " does not exist', 'code' => '400');\n";
-						$str .= "\t\t}\n";
-					}
-				}
-			}
-		}
-		$str .=	"\n";
+		$str .= $this -> check_foreign_keys($table);
 		
 		$str .= "\t\t/* Insert new row */\n";
 		$str .= "\t\ttry {\n";
@@ -470,7 +480,7 @@ class Model_Generator {
 		$str .= "\t\t/* Load ". $table -> name . " */\n";
 		$str .= "\t\t\$". $table -> name . " = " . $table -> name . "_model::get(" . implode(",", $pkfields) . ");\n";
 		$str .= "\t\tif(!\$".$table -> name . ") {\n";
-		$str .= "\t\t\treturn array('error' => '" . $table -> name . " not found');\n";
+		$str .= "\t\t\treturn array('error' => '" . $table -> name . " not found', 'code' => '404');\n";
 		$str .= "\t\t}\n";
 		if(isset($this -> rev_constraints[$table -> name]) && count($this -> rev_constraints[$table -> name]) != 0) {
 			foreach($this -> rev_constraints[$table -> name] as $child => $fk) {
@@ -490,7 +500,7 @@ class Model_Generator {
 		$str .= "\t\t/* Load ". $table -> name . " */\n";
 		$str .= "\t\t\$". $table -> name . " = " . $table -> name . "_model::get(" . implode(",", $pkfields) . ");\n";
 		$str .= "\t\tif(!\$".$table -> name . ") {\n";
-		$str .= "\t\t\treturn array('error' => '" . $table -> name . " not found');\n";
+		$str .= "\t\t\treturn array('error' => '" . $table -> name . " not found', 'code' => '404');\n";
 		$str .= "\t\t}\n\n";
 		$str .= "\t\t/* Find fields to update */\n";
 		$str .= "\t\t\$update = false;\n";
@@ -503,6 +513,8 @@ class Model_Generator {
 			}
 		}
 		$str .=	"\n";
+		$str .= $this -> check_foreign_keys($table);
+		
 		$str .= "\t\t/* Update the row */\n";
 		$str .= "\t\ttry {\n";
 		$str .= "\t\t\t\$" . $table -> name . " -> update();\n";
@@ -523,7 +535,7 @@ class Model_Generator {
 		$str .= "\t\t/* Load ". $table -> name . " */\n";
 		$str .= "\t\t\$". $table -> name . " = " . $table -> name . "_model::get(" . implode(",", $pkfields) . ");\n";
 		$str .= "\t\tif(!\$".$table -> name . ") {\n";
-		$str .= "\t\t\treturn array('error' => '" . $table -> name . " not found');\n";
+		$str .= "\t\t\treturn array('error' => '" . $table -> name . " not found', 'code' => '404');\n";
 		$str .= "\t\t}\n\n";
 		if(isset($this -> rev_constraints[$table -> name]) && count($this -> rev_constraints[$table -> name]) != 0) {
 			$str .= "\t\t/* Check for child rows */\n";
@@ -544,10 +556,39 @@ class Model_Generator {
 		$str .= "\t\t}\n";
 		$str .=	"\t}\n";
 		
+		// TODO: get_by.. (unique indexes), list_by_(non-unique), search_by (all text fields)
+		
 		/* End file */
 		$str .= "}\n?>";
 		
 		file_put_contents($this -> base . "/lib/controller/" . $table -> name . "_controller.php", $str);
+	}
+	
+	/**
+	 * Look up foreign keys and throw sensible exceptions
+	 * 
+	 * @param string $table
+	 */
+	private function check_foreign_keys($table) {
+		$str = "";
+		if(count($table -> constraints) != 0) {
+			$str .= "\t\t/* Check parent tables */\n";
+			foreach($table -> constraints as $fk) {
+				if($fk -> parent_table != $table -> name) {
+					if($this -> field_match($fk -> parent_fields, $this -> database -> table[$fk -> parent_table] -> pk)) {
+						$f = array();
+						foreach($fk -> child_fields as $a) {
+							$f[] = "\$" . $table -> name . " -> get_$a";
+						}
+						$str .= "\t\tif(!".$fk -> parent_table . "_model::get(" . implode(", ", $f) . "())) {\n";
+						$str .= "\t\t\treturn array('error' => '" . $table -> name . " is invalid because related " . $fk -> parent_table . " does not exist', 'code' => '400');\n";
+						$str .= "\t\t}\n";
+					}
+				}
+			}
+			$str .= "\n";
+		}
+		return $str;
 	}
 	
 	private function backbone_models(SQL_Database $database) {
