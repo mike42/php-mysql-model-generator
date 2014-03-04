@@ -136,7 +136,7 @@ class Model_Generator {
 		$str .= "\n" . $this -> block_comment("Construct new " . $table -> name . " from field list\n\n@return array", 1);
 		$str .= "\tpublic function __construct(array \$fields = array()) {\n";
 		if(count($table -> cols) != 0) {
-			$str .= "/* Initialise everything as blank to avoid tripping up the permissions fitlers */\n";
+			$str .= "\t\t/* Initialise everything as blank to avoid tripping up the permissions fitlers */\n";
 			foreach($table -> cols as $col) {
 				$str .= "\t\t\$this -> " . $col -> name . " = '';\n";
 			}
