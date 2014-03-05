@@ -366,8 +366,8 @@ class Model_Generator {
 		$str .= "\t\t\$ls = \"\";\n" .
 				"\t\t\$start = (int)\$start;\n" .
 				"\t\t\$limit = (int)\$limit;\n" .
-				"\t\tif(\$start > 0 && \$limit > 0) {\n" .
-				"\t\t\t\$ls = \" LIMIT \$start, \" . (\$start + \$limit);\n" .
+				"\t\tif(\$start >= 0 && \$limit > 0) {\n" .
+				"\t\t\t\$ls = \" LIMIT \$start, \$limit\";\n" .
 				"\t\t}\n";
 		$sql = "SELECT " . implode(", ", $join['fields']) . " FROM " . $table -> name . " " . $join['clause'];
 		$str .= "\t\t\$sth = database::\$dbh -> prepare(\"$sql\" . \$ls . \";\");\n";
@@ -392,8 +392,8 @@ class Model_Generator {
 			$str .= "\t\t\$ls = \"\";\n" .
 					"\t\t\$start = (int)\$start;\n" .
 					"\t\t\$limit = (int)\$limit;\n" .
-					"\t\tif(\$start > 0 && \$limit > 0) {\n" .
-					"\t\t\t\$ls = \" LIMIT \$start, \" . (\$start + \$limit);\n" .
+					"\t\tif(\$start >= 0 && \$limit > 0) {\n" .
+					"\t\t\t\$ls = \" LIMIT \$start, \$limit\";\n" .
 					"\t\t}\n";
  			$conditions = $arrEntry = array();
  			foreach($index -> fields as $field) {
@@ -424,6 +424,10 @@ class Model_Generator {
 
 	private function make_controller(SQL_Table $table) {
 		$pkfields = $this -> listFields($table, $table -> pk, true);
+		$pkfields_defaults = array();
+		foreach($pkfields as $id => $field) {
+			$pkfields_defaults[$id] = $field . " = null";
+		}
 		$field_array = array();
 		$nonpk_field_array = array();
 		
@@ -471,7 +475,7 @@ class Model_Generator {
 		$str .=	"\t}\n\n";
 
 		// Read
-		$str .= "\tpublic static function read(" . implode(",", $pkfields) . ") {\n";
+		$str .= "\tpublic static function read(" . implode(",", $pkfields_defaults) . ") {\n";
 		$str .= "\t\t/* Check permission */\n";
 		$str .= "\t\t\$role = session::getRole();\n";
 		$str .= "\t\tif(!isset(core::\$permission[\$role]['" . $table -> name . "']['read']) || count(core::\$permission[\$role]['" . $table -> name . "']['read']) == 0) {\n";
@@ -491,7 +495,7 @@ class Model_Generator {
 		$str .=	"\t}\n\n";
 
 		// Update
-		$str .= "\tpublic static function update(" . implode(",", $pkfields) . ") {\n";
+		$str .= "\tpublic static function update(" . implode(",", $pkfields_defaults) . ") {\n";
 		$str .= "\t\t/* Check permission */\n";
 		$str .= "\t\t\$role = session::getRole();\n";
 		$str .= "\t\tif(!isset(core::\$permission[\$role]['" . $table -> name . "']['update']) || count(core::\$permission[\$role]['" . $table -> name . "']['update']) == 0) {\n";
@@ -525,7 +529,7 @@ class Model_Generator {
 		$str .=	"\t}\n\n";
 		
 		// Delete
-		$str .= "\tpublic static function delete(" . implode(",", $pkfields) . ") {\n";
+		$str .= "\tpublic static function delete(" . implode(",", $pkfields_defaults) . ") {\n";
 		$str .= "\t\t/* Check permission */\n";
 		$str .= "\t\t\$role = session::getRole();\n";
 		$str .= "\t\tif(!isset(core::\$permission[\$role]['" . $table -> name . "']['delete']) || core::\$permission[\$role]['" . $table -> name . "']['delete'] != true) {\n";
@@ -555,6 +559,31 @@ class Model_Generator {
 		$str .= "\t\t\treturn array('error' => 'Failed to delete', 'code' => '500');\n";
 		$str .= "\t\t}\n";
 		$str .=	"\t}\n";
+		$str .= "\n";
+		
+		// List all
+		$str .= "\tpublic static function list_all(\$page = 1, \$itemspp = 20) {\n";
+		$str .= "\t\t/* Check permission */\n";
+		$str .= "\t\t\$role = session::getRole();\n";
+		$str .= "\t\tif(!isset(core::\$permission[\$role]['" . $table -> name ."']['read']) || count(core::\$permission[\$role]['" . $table -> name ."']['read']) == 0) {\n";
+		$str .= "\t\t\treturn array('error' => 'You do not have permission to do that', 'code' => '403');\n";
+		$str .= "\t\t}\n";
+		$str .= "\t\tif((int)\$page < 1 || (int)\$itemspp < 1) {\n";
+		$str .= "\t\t\treturn array('error' => 'Invalid page number or item count', 'code' => '400');\n";
+		$str .= "\t\t}\n";
+		$str .= "\n";
+		$str .= "\t\t/* Retrieve and filter rows */\n";
+		$str .= "\t\ttry {\n";
+		$str .= "\t\t\t\$" . $table -> name ."_list = " . $table -> name ."_model::list_all((\$page - 1) * \$itemspp, \$itemspp);\n";
+		$str .= "\t\t\t\$ret = array();\n";
+		$str .= "\t\t\tforeach(\$" . $table -> name ."_list as \$" . $table -> name .") {\n";
+		$str .= "\t\t\t\t\$ret[] = \$" . $table -> name ." -> to_array_filtered(\$role);\n";
+		$str .= "\t\t\t}\n";
+		$str .= "\t\t\treturn \$ret;\n";
+		$str .= "\t\t} catch(Exception \$e) {\n";
+		$str .= "\t\t\treturn array('error' => 'Failed to list', 'code' => '500');\n";
+		$str .= "\t\t}\n";
+		$str .= "\t}\n";
 		
 		// TODO: get_by.. (unique indexes), list_by_(non-unique), search_by (all text fields)
 		
