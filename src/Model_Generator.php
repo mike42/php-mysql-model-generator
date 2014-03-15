@@ -415,7 +415,33 @@ class Model_Generator {
 		}
 		
 		/* Search by text fields */
-		// TODO
+		foreach($table -> cols as $col) {
+			if($this -> primitive($col) != "string") {
+				continue;
+			}
+			
+			$str .= "\n" . $this -> block_comment("Simple search within " . $col -> name . " field\n\n" .
+					"@param int \$start Row to begin from. Default 0 (begin from start)\n" .
+					"@param int \$limit Maximum number of rows to retrieve. Default -1 (no limit)", 1);
+			$str .= "\tpublic static function search_by_".$col -> name."(\$search, \$start = 0, \$limit = -1) {\n";
+			$str .= "\t\t\$ls = \"\";\n" .
+					"\t\t\$start = (int)\$start;\n" .
+					"\t\t\$limit = (int)\$limit;\n" .
+					"\t\tif(\$start >= 0 && \$limit > 0) {\n" .
+					"\t\t\t\$ls = \" LIMIT \$start, \$limit\";\n" .
+					"\t\t}\n";
+			$sql = "SELECT " . implode(", ", $join['fields']) . " FROM " . $table -> name . " " . $join['clause'] . " WHERE " . $col -> name . " LIKE :search";
+			$str .= "\t\t\$sth = database::\$dbh -> prepare(\"$sql\" . \$ls . \";\");\n";
+			$str .= "\t\t\$sth -> execute(array('search' => \"%\".\$search.\"%\"));\n";
+			$str .= "\t\t\$rows = \$sth -> fetchAll(PDO::FETCH_NUM);\n" .
+					"\t\t\$ret = array();\n" .
+					"\t\tforeach(\$rows as \$row) {\n" .
+					"\t\t\t\$assoc = self::row_to_assoc(\$row);\n" .
+					"\t\t\t\$ret[] = new " . $table -> name . "_model(\$assoc);\n" .
+					"\t\t}\n" .
+					"\t\treturn \$ret;\n";			
+			$str .= "\t}\n";
+		}
 
 		/* Finalise and output */
 		$str .= "}\n?>";
