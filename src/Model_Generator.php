@@ -68,8 +68,10 @@ class Model_Generator {
 	private function make_model(SQL_Table $table) {
 		/* Figure out PK */
 		$pkfields = array();
+		$pkfields_name_only = array();
 		foreach($table -> pk as $fieldname) {
-			$pkfields[] = "$fieldname = :$fieldname";
+			$pkfields[] = "`" . $table -> name . "`.`$fieldname` = :$fieldname";
+			$pkfields_name_only[] = "`" . $table -> name . "`.`$fieldname`";
 		}
 		
 		/* Figure out JOIN clause to use on every SELECT */
@@ -112,6 +114,11 @@ class Model_Generator {
 				$str .= "\tpublic \$list_".$child . ";\n";
 			}
 		}
+		
+		/* Sort */
+		$str .= "\n\t/* Sort clause to add when listing rows from this table */\n";
+		$str .= "\tconst SORT_CLAUSE = \" ORDER BY " . implode(", ", $pkfields_name_only) . "\";\n";
+
 
 		/* Init and load related tables */
 		$str .= "\n" . $this -> block_comment("Initialise and load related tables", 1);
@@ -215,7 +222,7 @@ class Model_Generator {
 		$str .= "\n" . $this -> block_comment("Convert retrieved database row from numbered to named keys, including table name\n\n@param array \$row ror retrieved from database\n@return array row with indices", 1);
 		$str .= "\tprivate static function row_to_assoc(array \$row) {\n";
 		$cols = array();
-		foreach($join['fields'] as $num => $name) {
+		foreach($join['fields-notick'] as $num => $name) {
 			$cols[] = "\t\t\t\"$name\" => \$row[$num]";
 		}
 		$str .= "\t\t\$values = array(". (count($cols) > 0? "\n". implode(",\n", $cols) : "") . ");\n";
@@ -253,12 +260,12 @@ class Model_Generator {
 			$str .= "\t\t\$data['$fieldname'] = \$this -> get_$fieldname();\n";
 		}
 		$str .= "\t\tforeach(\$this -> model_variables_changed as \$col => \$changed) {\n" .
-		 	"\t\t\t\$fieldset[] = \"\$col = :\$col\";\n" .
+		 	"\t\t\t\$fieldset[] = \"`\$col` = :\$col\";\n" .
 		 	"\t\t\t\$data[\$col] = \$everything[\$col];\n" .
 		 	"\t\t}\n" .
 		 	"\t\t\$fields = implode(\", \", \$fieldset);\n\n" .
 		 	"\t\t/* Execute query */\n";
-		$str .= "\t\t\$sth = database::\$dbh -> prepare(\"UPDATE ".$table -> name . " SET \$fields WHERE " . implode(" AND ", $pkfields). "\");\n";
+		$str .= "\t\t\$sth = database::\$dbh -> prepare(\"UPDATE `".$table -> name . "` SET \$fields WHERE " . implode(" AND ", $pkfields). "\");\n";
 		$str .= "\t\t\$sth -> execute(\$data);\n";
 		$str .= "\t}\n";
 
@@ -273,14 +280,14 @@ class Model_Generator {
 		 	"\t\t\$data = array();\n" .
 		 	"\t\t\$everything = \$this -> to_array();\n" .
 		 	"\t\tforeach(\$this -> model_variables_set as \$col => \$changed) {\n" .
-		 	"\t\t\t\$fieldset[] = \$col;\n" .
+		 	"\t\t\t\$fieldset[] = \"`\$col`\";\n" .
 		 	"\t\t\t\$fieldset_colon[] = \":\$col\";\n" .
 		 	"\t\t\t\$data[\$col] = \$everything[\$col];\n" .
 		 	"\t\t}\n";
 		$str .= "\t\t\$fields = implode(\", \", \$fieldset);\n" .
 			"\t\t\$vals = implode(\", \", \$fieldset_colon);\n\n" .
 			"\t\t/* Execute query */\n" .
-			"\t\t\$sth = database::\$dbh -> prepare(\"INSERT INTO ".$table -> name . " (\$fields) VALUES (\$vals);\");\n";
+			"\t\t\$sth = database::\$dbh -> prepare(\"INSERT INTO `".$table -> name . "` (\$fields) VALUES (\$vals);\");\n";
 		$str .= "\t\t\$sth -> execute(\$data);\n";
 		if(count($table -> pk) == 1) {
 			$str .= "\t\t\$this -> set_" . $table -> pk[0]. "(database::\$dbh->lastInsertId());\n";
@@ -290,7 +297,7 @@ class Model_Generator {
 		/* Delete */
 		$str .= "\n" . $this -> block_comment("Delete " . $table -> name, 1);
 		$str .= "\tpublic function delete() {\n";
-		$str .= "\t\t\$sth = database::\$dbh -> prepare(\"DELETE FROM ".$table -> name . " WHERE " . implode(" AND ", $pkfields). "\");\n";
+		$str .= "\t\t\$sth = database::\$dbh -> prepare(\"DELETE FROM `".$table -> name . "` WHERE " . implode(" AND ", $pkfields). "\");\n";
 		foreach($table -> pk as $fieldname) {
 			$str .= "\t\t\$data['$fieldname'] = \$this -> get_$fieldname();\n";
 		}
@@ -320,7 +327,7 @@ class Model_Generator {
 		$str .= ") {\n";
 		$conditions = $arrEntry = array();
 		foreach($table -> pk as $field) {
-			$conditions[] = $table -> name . "." . $field . " = :$field";
+			$conditions[] = "`" . $table -> name . "`.`" . $field . "` = :$field";
 			$arrEntry[] = "'$field' => \$$field";
 		}
 		$sql = "SELECT " . implode(", ", $join['fields']) . " FROM " . $table -> name . " " . $join['clause'] . " WHERE " . implode(" AND ", $conditions);
@@ -342,7 +349,7 @@ class Model_Generator {
 			$str .= ") {\n";
  			$conditions = $arrEntry = array();
  			foreach($unique -> fields as $field) {
- 				$conditions[] = $table -> name . "." . $field . " = :$field";
+ 				$conditions[] = "`" . $table -> name . "`.`" . $field . "` = :$field";
  				$arrEntry[] = "'$field' => \$$field";
  			}
  			/* Similar to get() above */
@@ -369,8 +376,8 @@ class Model_Generator {
 				"\t\tif(\$start >= 0 && \$limit > 0) {\n" .
 				"\t\t\t\$ls = \" LIMIT \$start, \$limit\";\n" .
 				"\t\t}\n";
-		$sql = "SELECT " . implode(", ", $join['fields']) . " FROM " . $table -> name . " " . $join['clause'];
-		$str .= "\t\t\$sth = database::\$dbh -> prepare(\"$sql\" . \$ls . \";\");\n";
+		$sql = "SELECT " . implode(", ", $join['fields']) . " FROM `" . $table -> name . "` " . $join['clause'];
+		$str .= "\t\t\$sth = database::\$dbh -> prepare(\"$sql\" . self::SORT_CLAUSE . \$ls . \";\");\n";
 		$str .= "\t\t\$sth -> execute();\n";
 		$str .= "\t\t\$rows = \$sth -> fetchAll(PDO::FETCH_NUM);\n" .
 				"\t\t\$ret = array();\n" .
@@ -401,8 +408,8 @@ class Model_Generator {
  				$arrEntry[] = "'$field' => \$$field";
  			}
  			/* Query is again similar to get() above */
- 			$sql = "SELECT " . implode(", ", $join['fields']) . " FROM " . $table -> name . " " . $join['clause'] . " WHERE " . implode(" AND ", $conditions);
- 			$str .= "\t\t\$sth = database::\$dbh -> prepare(\"$sql\" . \$ls . \";\");\n";
+ 			$sql = "SELECT " . implode(", ", $join['fields']) . " FROM `" . $table -> name . "` " . $join['clause'] . " WHERE " . implode(" AND ", $conditions);
+ 			$str .= "\t\t\$sth = database::\$dbh -> prepare(\"$sql\" . self::SORT_CLAUSE . \$ls . \";\");\n";
  			$str .= "\t\t\$sth -> execute(array(" . implode(", ", $arrEntry) . "));\n";
 			$str .= "\t\t\$rows = \$sth -> fetchAll(PDO::FETCH_NUM);\n" .
 					"\t\t\$ret = array();\n" .
@@ -430,8 +437,8 @@ class Model_Generator {
 					"\t\tif(\$start >= 0 && \$limit > 0) {\n" .
 					"\t\t\t\$ls = \" LIMIT \$start, \$limit\";\n" .
 					"\t\t}\n";
-			$sql = "SELECT " . implode(", ", $join['fields']) . " FROM " . $table -> name . " " . $join['clause'] . " WHERE " . $col -> name . " LIKE :search";
-			$str .= "\t\t\$sth = database::\$dbh -> prepare(\"$sql\" . \$ls . \";\");\n";
+			$sql = "SELECT " . implode(", ", $join['fields']) . " FROM `" . $table -> name . "` " . $join['clause'] . " WHERE " . $col -> name . " LIKE :search";
+			$str .= "\t\t\$sth = database::\$dbh -> prepare(\"$sql\" . self::SORT_CLAUSE . \$ls . \";\");\n";
 			$str .= "\t\t\$sth -> execute(array('search' => \"%\".\$search.\"%\"));\n";
 			$str .= "\t\t\$rows = \$sth -> fetchAll(PDO::FETCH_NUM);\n" .
 					"\t\t\$ret = array();\n" .
@@ -595,12 +602,16 @@ class Model_Generator {
 		$str .= "\t\t\treturn array('error' => 'You do not have permission to do that', 'code' => '403');\n";
 		$str .= "\t\t}\n";
 		$str .= "\t\tif((int)\$page < 1 || (int)\$itemspp < 1) {\n";
-		$str .= "\t\t\treturn array('error' => 'Invalid page number or item count', 'code' => '400');\n";
+		$str .= "\t\t\t\$start = 0;\n";
+		$str .= "\t\t\t\$limit = -1;\n";
+		$str .= "\t\t} else {\n";
+		$str .= "\t\t\t\$start = (\$page - 1) * \$itemspp;\n";
+		$str .= "\t\t\t\$limit = \$itemspp;\n";
 		$str .= "\t\t}\n";
 		$str .= "\n";
 		$str .= "\t\t/* Retrieve and filter rows */\n";
 		$str .= "\t\ttry {\n";
-		$str .= "\t\t\t\$" . $table -> name ."_list = " . $table -> name ."_model::list_all((\$page - 1) * \$itemspp, \$itemspp);\n";
+		$str .= "\t\t\t\$" . $table -> name ."_list = " . $table -> name ."_model::list_all(\$start, \$limit);\n";
 		$str .= "\t\t\t\$ret = array();\n";
 		$str .= "\t\t\tforeach(\$" . $table -> name ."_list as \$" . $table -> name .") {\n";
 		$str .= "\t\t\t\t\$ret[] = \$" . $table -> name ." -> to_array_filtered(\$role);\n";
@@ -659,7 +670,7 @@ class Model_Generator {
 	private function backbone_model(SQL_Table $table) {
 		$str = "";
 		$str .= "/* " . $table -> name . " */\n";
-		$str .= $table -> name . "_model = Backbone.Model.extend({\n";
+		$str .= "var " . $table -> name . "_model = Backbone.Model.extend({\n";
 		$str .= "\turlRoot: '/" . $this -> database -> name . "/api/" . $table -> name . "',\n";
 
 		if($table -> pk[0] != 'id') {
@@ -684,6 +695,11 @@ class Model_Generator {
 		$str .= implode(",\n", $defaults);
 		$str .= "\n\t}\n";
 		
+		$str .= "});\n";
+		
+		$str .= "var " . $table -> name . "_collection = Backbone.Collection.extend({\n";
+		$str .= "\turl : '/dl/api/" . $table -> name . "/list_all/',\n";
+		$str .= "\tmodel : " . $table -> name . "_model\n";
 		$str .= "});\n\n";
 		return $str;
 	}
@@ -803,12 +819,13 @@ class Model_Generator {
 	
 	private function getJoin($fromTableName) {
 		/* Breadth-first search for parent tables */
-		$allfields = array();
+		$allfields = $allfields_notick = array();
 		$queue = array();
 		$ret = array();
 		$visited = array($fromTableName);		
 		foreach($this -> database -> table[$fromTableName] -> cols as $col) {
-			$allfields[] = $fromTableName . "." . $col -> name;
+			$allfields[] = "`" . $fromTableName . "`.`" . $col -> name . "`";
+			$allfields_notick[] = $fromTableName . "." . $col -> name;
 		}
 		foreach($this -> database -> table[$fromTableName] -> constraints as $constraint) {
 			$constraint -> child_table = $fromTableName;
@@ -822,11 +839,12 @@ class Model_Generator {
 				
 				$condition = array();
 				foreach($constraint -> child_fields as $num => $field) {
-					$condition[] = $constraint -> child_table . "." . $field . " = " . $constraint -> parent_table . "." . $constraint -> parent_fields[$num];
+					$condition[] = "`" . $constraint -> child_table . "`.`" . $field . "` = `" . $constraint -> parent_table . "`.`" . $constraint -> parent_fields[$num] . "`";
 				}
-				$ret[] = "JOIN " . $constraint -> parent_table . " ON " . implode(" AND ", $condition);
+				$ret[] = "JOIN `" . $constraint -> parent_table . "` ON " . implode(" AND ", $condition);
 				foreach($this -> database -> table[$constraint -> parent_table] -> cols as $col) {
-					$allfields[] = $constraint -> parent_table . "." . $col -> name;
+					$allfields[] = "`".$constraint -> parent_table . "`.`".$col -> name ."`";
+					$allfields_notick[] = $constraint -> parent_table . ".".$col -> name;
 				}
 				foreach($this -> database -> table[$constraint -> parent_table] -> constraints as $sub_constraint) {
 					$sub_constraint -> child_table = $constraint -> parent_table;
@@ -834,6 +852,6 @@ class Model_Generator {
 				}
 			}
 		}
-		return array('clause' => implode(" ", $ret), 'fields' => $allfields);
+		return array('clause' => implode(" ", $ret), 'fields' => $allfields, 'fields-notick' => $allfields_notick);
 	}
 }
