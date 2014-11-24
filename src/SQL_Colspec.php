@@ -5,8 +5,11 @@ class SQL_Colspec {
 	public $size;
 	public $values;
 	public $comment;
+	public $nullable;
 
 	public function __construct($tokens) {
+		$this -> nullable = true;
+		
 		$this -> name = SQL_Token::get_identifier($tokens[0] -> str);
 		$this -> type = strtoupper($tokens[1] -> str);
 		$size = array();
@@ -26,9 +29,10 @@ class SQL_Colspec {
 		
 		/* Find comment */
 		$this -> comment = "";
-		$next = false;
-		foreach($tokens as $token) {
-			if($next) {
+		$commentNext = false;
+		$not = false;
+		foreach($tokens as $token) {		
+			if($commentNext) {
 				if($token -> type == SQL_Token::STRING_LITERAL) {
 					$this -> comment = trim(SQL_Token::get_string_literal($token -> str));
 					break;
@@ -36,7 +40,16 @@ class SQL_Colspec {
 					break; // Not a comment. Give up.
 				}
 			} else if($token -> type == SQL_Token::IDENTIFIER && strtoupper($token -> str) == "COMMENT") {
-				$next = true;
+				$commentNext = true;
+			} else if($not && $token -> type == SQL_Token::KEYWORD && strtoupper($token -> str) == "NULL") {
+				$this -> nullable = false;
+			}
+			
+			/* Track the NOT keyword so we can spot NOT NULL */
+			if($token -> type == SQL_Token::KEYWORD && strtoupper($token -> str) == "NOT") {
+				$not = true;
+			} else {
+				$not = false;
 			}
 		}
 	}
