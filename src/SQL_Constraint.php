@@ -10,7 +10,8 @@ class SQL_Constraint {
 	public $parent_table;
 	public $parent_fields;
 	public $child_table; // Used when generating models
-
+	public $reversed;
+	
 	/**
 	 * Roughly parse constraints
 	 *
@@ -20,6 +21,7 @@ class SQL_Constraint {
 	public function __construct($tokens) {
 		$this -> child_fields = array();
 		$this -> parent_fields = array();
+		$this -> reversed = false;
 
 		$stage = 0;
 		foreach($tokens as $id => $token) {
@@ -54,6 +56,7 @@ class SQL_Constraint {
 					break;
 			}
 		}
+
 		throw new Exception("Unable to parse constraint");
 	}
 
@@ -81,5 +84,22 @@ class SQL_Constraint {
 				$this -> parent_fields[] = SQL_Token::get_identifier($token -> str);
 			}
 		}
+	}
+	
+	/**
+	 * Reverse direction of the relationship
+	 */
+	public function reverse() {
+		// Swap tables
+		$tmp = $this -> parent_table;
+		$this -> parent_table = $this -> child_table;
+		$this -> child_table = $tmp;
+		
+		// Swap fields
+		$tmp = $this -> parent_fields;
+		$this -> parent_fields = $this -> child_fields;
+		$this -> child_fields = $tmp;
+		
+		$this -> reversed = !$this -> reversed;
 	}
 }

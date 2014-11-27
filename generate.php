@@ -8,5 +8,7 @@ if(count($argv) != 2) {
 }
 $import = new SQL_Database(file_get_contents("php://stdin"));
 $import -> name = $argv[1];
+
 $mg = new Model_Generator($import);
 $mg -> generate();
+

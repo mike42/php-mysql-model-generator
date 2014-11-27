@@ -1,4 +1,6 @@
 <?php
+require_once(dirname(__FILE__) . "/Model_Entity.php");
+
 class Model_Generator {
 	private $database;
 	private $base; // Base dir
@@ -7,16 +9,7 @@ class Model_Generator {
 	public function __construct(SQL_Database $database) {
 		$this -> database = $database;
 		$this -> base = dirname(__FILE__) . "/../" .$database -> name;
-		/* Create reverse lookup for foreign keys */
-		foreach($this -> database -> table as $table) {
-			foreach($table -> constraints as $constraint) {
-				$tmp = $constraint;
-				if($idx_name = $this -> find_index($table, $tmp -> child_fields)) {
-					$tmp -> name = $idx_name;
-					$this -> rev_constraints[$constraint -> parent_table][$table -> name] = $tmp;
-				}
-			}
-		}
+
 	}
 
 	public function generate() {
@@ -64,11 +57,20 @@ class Model_Generator {
 		}
 		file_put_contents($this -> base . "/site/permissions.php", $str);
 	}
-	
+
 	private function make_model(SQL_Table $table) {
-		$entity = new Model_Entity($table);
+
+			$entity = new Model_Entity($table, $this -> database);
+			echo "digraph G {\n    overlap=false;rankdir=LR;splines=ortho;    \n    node[shape=record,colorscheme=set39,style=filled];\n    ".implode("\n    ", $entity -> toGraphVizDot()) . "\n}\n";
+
 		
 		
+		//print_r($entity);
+
+		
+		
+		return;
+		// TODO all below code is un-reachable
 		
 		/* Figure out PK */
 		$pkfields = array();
@@ -650,7 +652,7 @@ class Model_Generator {
 			$str .= "\t\t/* Check parent tables */\n";
 			foreach($table -> constraints as $fk) {
 				if($fk -> parent_table != $table -> name) {
-					if($this -> field_match($fk -> parent_fields, $this -> database -> table[$fk -> parent_table] -> pk)) {
+					if(Model_Entity::field_match($fk -> parent_fields, $this -> database -> table[$fk -> parent_table] -> pk)) {
 						$f = array();
 						foreach($fk -> child_fields as $a) {
 							$f[] = "\$" . $table -> name . " -> get_$a";
@@ -768,44 +770,6 @@ class Model_Generator {
 		return "\t\t// TODO: Add validation to " . $table -> name . "." . $col -> name . "\n";
 	}
 
-	/**
-	 * Find the name of an index matching the field list given
-	 *
-	 * @param SQL_Table $table
-	 * @param array $child_fields
-	 * @return boolean
-	 */
-	private function find_index(SQL_Table $table, array $child_fields) {
-		foreach($table -> index as $index) {
-			if($this -> field_match($index -> fields, $child_fields)) {
-				return $index -> name;
-			}
-		}
-		//print_r($child_fields); print_r($table);
-		return false;
-	}
-
-	/**
-	 * Check if two lists of fields are equal
-	 *
-	 * @param array $f1
-	 * @param array $f2
-	 * @return boolean
-	 */
-	private function field_match(array $f1, array $f2) {
-		sort($f1);
-		sort($f2);
-		if(count(!$f1) != count($f2)) {
-			return false;
-		}
-		for($i = 0; $i < count($f1); $i++) {
-			if(!isset($f1[$i]) || !isset($f2[$i]) || $f1[$i] != $f2[$i]) {
-				return false;
-			}
-		}
-		return true;
-	}
-	
 	private function block_comment($str, $indent) {
 		$lines = explode("\n", $str);
 		$outp = "";
