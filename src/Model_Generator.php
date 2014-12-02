@@ -9,14 +9,15 @@ class Model_Generator {
 	public function __construct(SQL_Database $database) {
 		$this -> database = $database;
 		$this -> base = dirname(__FILE__) . "/../" .$database -> name;
-
 	}
 
 	public function generate() {
 		$this -> make_app_skeleton();
 		foreach($this -> database -> table as $table) {
-			$this -> make_model($table);
-			$this -> make_controller($table);
+			$entity = new Model_Entity($table, $this -> database);
+			$this -> make_graphviz_doc($entity);
+			$this -> make_model($entity);
+			$this -> make_controller($entity);
 		}
 		$this -> backbone_models($this -> database);
 	}
@@ -25,12 +26,14 @@ class Model_Generator {
 		if(file_exists($this -> base)) {
 			throw new Exception("Cannot save to " . $this -> base . ", a file/folder exists there.");
 		}
-		
+
 		$cmd = sprintf("cp -R %s %s", dirname(__FILE__) . "/template", $this -> base);
 		system($cmd);
-		
+
 		mkdir($this -> base . "/lib/model");
-		
+		mkdir($this -> base . "/doc/");
+		mkdir($this -> base . "/doc/diagram");
+
 		/* Generate default permissions */
 		$str = "<?php\n";
 		$str .= "/* Permissions for database fields */\n";
@@ -58,20 +61,25 @@ class Model_Generator {
 		file_put_contents($this -> base . "/site/permissions.php", $str);
 	}
 
-	private function make_model(SQL_Table $table) {
+	private function make_graphviz_doc(Model_Entity $entity) {
+		$dot = $pdf = $this -> base . "/doc/diagram/" . $entity -> table -> name;
+		$dot .= ".dot";
+		$pdf .= ".pdf";
+		file_put_contents($dot, $entity -> toGraphVizDotFile());
+		$cmd = sprintf("dot -Tpdf %s > %s", 
+			escapeshellarg($dot),
+			escapeshellarg($pdf)
+		);
+		system($cmd);
+	}
+	
+	private function make_model(Model_Entity $entity) {
+		$data = $entity -> process();
+		
 
-			$entity = new Model_Entity($table, $this -> database);
-			echo "digraph G {\n    overlap=false;rankdir=LR;splines=ortho;    \n    node[shape=record,colorscheme=set39,style=filled];\n    ".implode("\n    ", $entity -> toGraphVizDot()) . "\n}\n";
-
-		
-		
-		//print_r($entity);
-
-		
-		
 		return;
 		// TODO all below code is un-reachable
-		
+
 		/* Figure out PK */
 		$pkfields = array();
 		$pkfields_name_only = array();
@@ -79,16 +87,16 @@ class Model_Generator {
 			$pkfields[] = "`" . $table -> name . "`.`$fieldname` = :$fieldname";
 			$pkfields_name_only[] = "`" . $table -> name . "`.`$fieldname`";
 		}
-		
+
 		/* Figure out JOIN clause to use on every SELECT */
 		$join = $this -> getJOIN($table -> name);
-		
-		
+
+
 		// TODO print info here for processing
 		print_r($join);
 		return;
-		
-		/* Generate model */		
+
+		/* Generate model */
 		$str = "<?php\nclass ".$table -> name . "_model {\n";
 		foreach($table -> cols as $col) {
 			/* Class variables */
@@ -125,7 +133,7 @@ class Model_Generator {
 				$str .= "\tpublic \$list_".$child . ";\n";
 			}
 		}
-		
+
 		/* Sort */
 		$str .= "\n\t/* Sort clause to add when listing rows from this table */\n";
 		$str .= "\tconst SORT_CLAUSE = \" ORDER BY " . implode(", ", $pkfields_name_only) . "\";\n";
@@ -149,7 +157,7 @@ class Model_Generator {
 			}
 		}
 		$str .= "\t}\n";
-		
+
 		/* Constructor */
 		$str .= "\n" . $this -> block_comment("Construct new " . $table -> name . " from field list\n\n@return array", 1);
 		$str .= "\tpublic function __construct(array \$fields = array()) {\n";
@@ -159,11 +167,11 @@ class Model_Generator {
 				$str .= "\t\t\$this -> " . $col -> name . " = '';\n";
 			}
 			$str .= "\n";
-			
+				
 			foreach($table -> cols as $col) {
 				$str .= "\t\tif(isset(\$fields['" . $table -> name . "." . $col -> name . "'])) {\n" .
-					"\t\t\t\$this -> set_" . $col -> name . "(\$fields['" . $table -> name . "." . $col -> name . "']);\n" .
-					"\t\t}\n";
+						"\t\t\t\$this -> set_" . $col -> name . "(\$fields['" . $table -> name . "." . $col -> name . "']);\n" .
+						"\t\t}\n";
 			}
 			$str .= "\n";
 		}
@@ -179,34 +187,34 @@ class Model_Generator {
 			}
 		}
 		$str .= "\t}\n";
-		
+
 		/* To array */
 		$str .= "\n" . $this -> block_comment("Convert " . $table -> name . " to shallow associative array\n\n@return array", 1);
 		$str .= "\tprivate function to_array() {\n";
 		$fieldlist = array();
 		foreach($table -> cols as $col) {
-				$fieldlist[] = "\t\t\t'".$col -> name . "' => \$this -> " . $col -> name . "";
+			$fieldlist[] = "\t\t\t'".$col -> name . "' => \$this -> " . $col -> name . "";
 		}
 		$str .= "\t\t\$values = array(".(count($fieldlist) > 0 ? "\n" . implode(",\n", $fieldlist) : "") .  ");\n";
 		$str .= "\t\treturn \$values;\n";
 		$str .= "\t}\n";
-		
+
 		/* To restricted array (eg. for user output) */
 		$str .= "\n" . $this -> block_comment("Convert " . $table -> name . " to associative array, including only visible fields,\n" .
-				"parent tables, and loaded child tables\n\n" . 
+				"parent tables, and loaded child tables\n\n" .
 				"@param string \$role The user role to use", 1);
 		$str .= "\tpublic function to_array_filtered(\$role = \"anon\") {\n" .
-			"\t\tif(core::\$permission[\$role]['" . $table -> name ."']['read'] === false) {\n" . 
-			"\t\t\treturn false;\n" .
-			"\t\t}\n" .
-			"\t\t\$values = array();\n" .
-			"\t\t\$everything = \$this -> to_array();\n" .
-			"\t\tforeach(core::\$permission[\$role]['" . $table -> name ."']['read'] as \$field) {\n" .
-			"\t\t\tif(!isset(\$everything[\$field])) {\n" .
-			"\t\t\t\tthrow new Exception(\"Check permissions: '\$field' is not a real field in " . $table -> name ."\");\n" .
-			"\t\t\t}\n" .
-			"\t\t\t\$values[\$field] = \$everything[\$field];\n" .
-			"\t\t}\n";
+				"\t\tif(core::\$permission[\$role]['" . $table -> name ."']['read'] === false) {\n" .
+				"\t\t\treturn false;\n" .
+				"\t\t}\n" .
+				"\t\t\$values = array();\n" .
+				"\t\t\$everything = \$this -> to_array();\n" .
+				"\t\tforeach(core::\$permission[\$role]['" . $table -> name ."']['read'] as \$field) {\n" .
+				"\t\t\tif(!isset(\$everything[\$field])) {\n" .
+				"\t\t\t\tthrow new Exception(\"Check permissions: '\$field' is not a real field in " . $table -> name ."\");\n" .
+				"\t\t\t}\n" .
+				"\t\t\t\$values[\$field] = \$everything[\$field];\n" .
+				"\t\t}\n";
 		/* List out parent tables */
 		if(count($table -> constraints) != 0) {
 			foreach($table -> constraints as $fk) {
@@ -227,8 +235,8 @@ class Model_Generator {
 			}
 		}
 		$str .=	"\t\treturn \$values;\n" .
-			"\t}\n";
-		
+				"\t}\n";
+
 		/* From array('foo', 'bar', 'baz') to array('a.weeble' => 'foo', 'a.warble' => bar, 'b.beeble' => 'baz') */
 		$str .= "\n" . $this -> block_comment("Convert retrieved database row from numbered to named keys, including table name\n\n@param array \$row ror retrieved from database\n@return array row with indices", 1);
 		$str .= "\tprivate static function row_to_assoc(array \$row) {\n";
@@ -239,7 +247,7 @@ class Model_Generator {
 		$str .= "\t\t\$values = array(". (count($cols) > 0? "\n". implode(",\n", $cols) : "") . ");\n";
 		$str .= "\t\treturn \$values;\n";
 		$str .= "\t}\n";
-		
+
 		/* Getters and setters */
 		foreach($table -> cols as $col) {
 			$str .= "\n" . $this -> block_comment("Get " . $col -> name . "\n\n@return " . $this -> primitive($col), 1);
@@ -296,9 +304,9 @@ class Model_Generator {
 		 	"\t\t\t\$data[\$col] = \$everything[\$col];\n" .
 		 	"\t\t}\n";
 		$str .= "\t\t\$fields = implode(\", \", \$fieldset);\n" .
-			"\t\t\$vals = implode(\", \", \$fieldset_colon);\n\n" .
-			"\t\t/* Execute query */\n" .
-			"\t\t\$sth = database::\$dbh -> prepare(\"INSERT INTO `".$table -> name . "` (\$fields) VALUES (\$vals);\");\n";
+				"\t\t\$vals = implode(\", \", \$fieldset_colon);\n\n" .
+				"\t\t/* Execute query */\n" .
+				"\t\t\$sth = database::\$dbh -> prepare(\"INSERT INTO `".$table -> name . "` (\$fields) VALUES (\$vals);\");\n";
 		$str .= "\t\t\$sth -> execute(\$data);\n";
 		if(count($table -> pk) == 1) {
 			$str .= "\t\t\$this -> set_" . $table -> pk[0]. "(database::\$dbh->lastInsertId());\n";
@@ -319,8 +327,8 @@ class Model_Generator {
 		if(isset($this -> rev_constraints[$table -> name]) && count($this -> rev_constraints[$table -> name]) != 0) {
 			foreach($this -> rev_constraints[$table -> name] as $child => $fk) {
 				$str .= "\n" . $this -> block_comment("List associated rows from " . $child . " table\n\n" .
-							"@param int \$start Row to begin from. Default 0 (begin from start)\n" . 
-							"@param int \$limit Maximum number of rows to retrieve. Default -1 (no limit)", 1);
+						"@param int \$start Row to begin from. Default 0 (begin from start)\n" .
+						"@param int \$limit Maximum number of rows to retrieve. Default -1 (no limit)", 1);
 				$str .= "\tpublic function populate_list_".$child . "(\$start = 0, \$limit = -1) {\n";
 				for($i = 0; $i < count($fk -> child_fields); $i++) {
 					$str .= "\t\t\$".$fk -> child_fields[$i] . " = \$this -> get_".$fk -> parent_fields[$i]."();\n";
@@ -345,7 +353,7 @@ class Model_Generator {
 		$str .= "\t\t\$sth = database::\$dbh -> prepare(\"$sql;\");\n";
 		$str .= "\t\t\$sth -> execute(array(" . implode(", ", $arrEntry) . "));\n";
 		$str .= "\t\t\$row = \$sth -> fetch(PDO::FETCH_NUM);\n";
- 		$str .= "\t\tif(\$row === false){\n";
+		$str .= "\t\tif(\$row === false){\n";
 		$str .= "\t\t\treturn false;\n";
 		$str .= "\t\t}\n";
 		$str .= "\t\t\$assoc = self::row_to_assoc(\$row);\n";
@@ -358,21 +366,21 @@ class Model_Generator {
 			$str .= "\tpublic static function get_by_".$unique -> name."(";
 			$str .= implode(", ", $this -> listFields($table, $unique -> fields, true));
 			$str .= ") {\n";
- 			$conditions = $arrEntry = array();
- 			foreach($unique -> fields as $field) {
- 				$conditions[] = "`" . $table -> name . "`.`" . $field . "` = :$field";
- 				$arrEntry[] = "'$field' => \$$field";
- 			}
- 			/* Similar to get() above */
- 			$sql = "SELECT " . implode(", ", $join['fields']) . " FROM " . $table -> name . " " . $join['clause'] . " WHERE " . implode(" AND ", $conditions);
- 			$str .= "\t\t\$sth = database::\$dbh -> prepare(\"$sql;\");\n";
- 			$str .= "\t\t\$sth -> execute(array(" . implode(", ", $arrEntry) . "));\n";
- 			$str .= "\t\t\$row = \$sth -> fetch(PDO::FETCH_NUM);\n";
- 			$str .= "\t\tif(\$row === false){\n";
- 			$str .= "\t\t\treturn false;\n";
- 			$str .= "\t\t}\n";
- 			$str .= "\t\t\$assoc = self::row_to_assoc(\$row);\n";
- 			$str .= "\t\treturn new " . $table -> name . "_model(\$assoc);\n";
+			$conditions = $arrEntry = array();
+			foreach($unique -> fields as $field) {
+				$conditions[] = "`" . $table -> name . "`.`" . $field . "` = :$field";
+				$arrEntry[] = "'$field' => \$$field";
+			}
+			/* Similar to get() above */
+			$sql = "SELECT " . implode(", ", $join['fields']) . " FROM " . $table -> name . " " . $join['clause'] . " WHERE " . implode(" AND ", $conditions);
+			$str .= "\t\t\$sth = database::\$dbh -> prepare(\"$sql;\");\n";
+			$str .= "\t\t\$sth -> execute(array(" . implode(", ", $arrEntry) . "));\n";
+			$str .= "\t\t\$row = \$sth -> fetch(PDO::FETCH_NUM);\n";
+			$str .= "\t\tif(\$row === false){\n";
+			$str .= "\t\t\treturn false;\n";
+			$str .= "\t\t}\n";
+			$str .= "\t\t\$assoc = self::row_to_assoc(\$row);\n";
+			$str .= "\t\treturn new " . $table -> name . "_model(\$assoc);\n";
 			$str .= "\t}\n";
 		}
 
@@ -398,7 +406,7 @@ class Model_Generator {
 				"\t\t}\n" .
 				"\t\treturn \$ret;\n";
 		$str .= "\t}\n";
-		
+
 		/* List by other indices */
 		foreach($table -> index as $index) {
 			$str .= "\n" . $this -> block_comment("List rows by " . $index -> name . " index\n\n" .
@@ -406,22 +414,22 @@ class Model_Generator {
 					"@param int \$limit Maximum number of rows to retrieve. Default -1 (no limit)", 1);
 			$str .= "\tpublic static function list_by_".$index -> name."(";
 			$str .= implode(", ", $this -> listFields($table, $index -> fields, true));
-			$str .= ", \$start = 0, \$limit = -1) {\n";			
+			$str .= ", \$start = 0, \$limit = -1) {\n";
 			$str .= "\t\t\$ls = \"\";\n" .
 					"\t\t\$start = (int)\$start;\n" .
 					"\t\t\$limit = (int)\$limit;\n" .
 					"\t\tif(\$start >= 0 && \$limit > 0) {\n" .
 					"\t\t\t\$ls = \" LIMIT \$start, \$limit\";\n" .
 					"\t\t}\n";
- 			$conditions = $arrEntry = array();
- 			foreach($index -> fields as $field) {
- 				$conditions[] = $table -> name . "." . $field . " = :$field";
- 				$arrEntry[] = "'$field' => \$$field";
- 			}
- 			/* Query is again similar to get() above */
- 			$sql = "SELECT " . implode(", ", $join['fields']) . " FROM `" . $table -> name . "` " . $join['clause'] . " WHERE " . implode(" AND ", $conditions);
- 			$str .= "\t\t\$sth = database::\$dbh -> prepare(\"$sql\" . self::SORT_CLAUSE . \$ls . \";\");\n";
- 			$str .= "\t\t\$sth -> execute(array(" . implode(", ", $arrEntry) . "));\n";
+			$conditions = $arrEntry = array();
+			foreach($index -> fields as $field) {
+				$conditions[] = $table -> name . "." . $field . " = :$field";
+				$arrEntry[] = "'$field' => \$$field";
+			}
+			/* Query is again similar to get() above */
+			$sql = "SELECT " . implode(", ", $join['fields']) . " FROM `" . $table -> name . "` " . $join['clause'] . " WHERE " . implode(" AND ", $conditions);
+			$str .= "\t\t\$sth = database::\$dbh -> prepare(\"$sql\" . self::SORT_CLAUSE . \$ls . \";\");\n";
+			$str .= "\t\t\$sth -> execute(array(" . implode(", ", $arrEntry) . "));\n";
 			$str .= "\t\t\$rows = \$sth -> fetchAll(PDO::FETCH_NUM);\n" .
 					"\t\t\$ret = array();\n" .
 					"\t\tforeach(\$rows as \$row) {\n" .
@@ -431,13 +439,13 @@ class Model_Generator {
 					"\t\treturn \$ret;\n";
 			$str .= "\t}\n";
 		}
-		
+
 		/* Search by text fields */
 		foreach($table -> cols as $col) {
 			if($this -> primitive($col) != "string") {
 				continue;
 			}
-			
+				
 			$str .= "\n" . $this -> block_comment("Simple search within " . $col -> name . " field\n\n" .
 					"@param int \$start Row to begin from. Default 0 (begin from start)\n" .
 					"@param int \$limit Maximum number of rows to retrieve. Default -1 (no limit)", 1);
@@ -457,7 +465,7 @@ class Model_Generator {
 					"\t\t\t\$assoc = self::row_to_assoc(\$row);\n" .
 					"\t\t\t\$ret[] = new " . $table -> name . "_model(\$assoc);\n" .
 					"\t\t}\n" .
-					"\t\treturn \$ret;\n";			
+					"\t\treturn \$ret;\n";
 			$str .= "\t}\n";
 		}
 
@@ -466,7 +474,10 @@ class Model_Generator {
 		file_put_contents($this -> base . "/lib/model/" . $table -> name . "_model.php", $str);
 	}
 
-	private function make_controller(SQL_Table $table) {
+	private function make_controller(Model_Entity $entity) {
+		return;
+		
+		// TODO
 		$pkfields = $this -> listFields($table, $table -> pk, true);
 		$pkfields_defaults = array();
 		foreach($pkfields as $id => $field) {
@@ -474,16 +485,16 @@ class Model_Generator {
 		}
 		$field_array = array();
 		$nonpk_field_array = array();
-		
+
 		foreach($table -> cols as $col) {
 			if(!in_array($col -> name, $table -> pk)) {
 				$nonpk_field_array[] = "'" . $col -> name . "'";
 			}
 			$field_array[] = "'" . $col -> name . "'";
 		}
-		
+
 		$str = "<?php\nclass ".$table -> name . "_controller {\n";
-		
+
 		// Init
 		$str .= "\tpublic static function init() {\n";
 		$str .=	"\t\tcore::loadClass(\"session\");\n";
@@ -508,7 +519,7 @@ class Model_Generator {
 		$str .= "\t\t}\n";
 		$str .= "\t\t\t\$" . $table -> name . " = new " . $table -> name . "_model(\$init);\n\n";
 		$str .= $this -> check_foreign_keys($table);
-		
+
 		$str .= "\t\t/* Insert new row */\n";
 		$str .= "\t\ttry {\n";
 		$str .= "\t\t\t\$" . $table -> name . " -> insert();\n";
@@ -562,7 +573,7 @@ class Model_Generator {
 		}
 		$str .=	"\n";
 		$str .= $this -> check_foreign_keys($table);
-		
+
 		$str .= "\t\t/* Update the row */\n";
 		$str .= "\t\ttry {\n";
 		$str .= "\t\t\t\$" . $table -> name . " -> update();\n";
@@ -571,7 +582,7 @@ class Model_Generator {
 		$str .= "\t\t\treturn array('error' => 'Failed to update row', 'code' => '500');\n";
 		$str .= "\t\t}\n";
 		$str .=	"\t}\n\n";
-		
+
 		// Delete
 		$str .= "\tpublic static function delete(" . implode(",", $pkfields_defaults) . ") {\n";
 		$str .= "\t\t/* Check permission */\n";
@@ -579,7 +590,7 @@ class Model_Generator {
 		$str .= "\t\tif(!isset(core::\$permission[\$role]['" . $table -> name . "']['delete']) || core::\$permission[\$role]['" . $table -> name . "']['delete'] != true) {\n";
 		$str .= "\t\t\treturn array('error' => 'You do not have permission to do that', 'code' => '403');\n";
 		$str .= "\t\t}\n\n";
-				
+
 		$str .= "\t\t/* Load ". $table -> name . " */\n";
 		$str .= "\t\t\$". $table -> name . " = " . $table -> name . "_model::get(" . implode(",", $pkfields) . ");\n";
 		$str .= "\t\tif(!\$".$table -> name . ") {\n";
@@ -604,7 +615,7 @@ class Model_Generator {
 		$str .= "\t\t}\n";
 		$str .=	"\t}\n";
 		$str .= "\n";
-		
+
 		// List all
 		$str .= "\tpublic static function list_all(\$page = 1, \$itemspp = 20) {\n";
 		$str .= "\t\t/* Check permission */\n";
@@ -632,18 +643,18 @@ class Model_Generator {
 		$str .= "\t\t\treturn array('error' => 'Failed to list', 'code' => '500');\n";
 		$str .= "\t\t}\n";
 		$str .= "\t}\n";
-		
+
 		// TODO: get_by.. (unique indexes), list_by_(non-unique), search_by (all text fields)
-		
+
 		/* End file */
 		$str .= "}\n?>";
-		
+
 		file_put_contents($this -> base . "/lib/controller/" . $table -> name . "_controller.php", $str);
 	}
-	
+
 	/**
 	 * Look up foreign keys and throw sensible exceptions
-	 * 
+	 *
 	 * @param string $table
 	 */
 	private function check_foreign_keys($table) {
@@ -667,7 +678,7 @@ class Model_Generator {
 		}
 		return $str;
 	}
-	
+
 	private function backbone_models(SQL_Database $database) {
 		$str = "";
 		foreach($database -> table as $name => $table) {
@@ -677,7 +688,7 @@ class Model_Generator {
 		}
 		file_put_contents($this -> base . "/public/js/models.js", $str);
 	}
-	
+
 	private function backbone_model(SQL_Table $table) {
 		$str = "";
 		$str .= "/* " . $table -> name . " */\n";
@@ -705,16 +716,16 @@ class Model_Generator {
 		}
 		$str .= implode(",\n", $defaults);
 		$str .= "\n\t}\n";
-		
+
 		$str .= "});\n";
-		
+
 		$str .= "var " . $table -> name . "_collection = Backbone.Collection.extend({\n";
 		$str .= "\turl : '/dl/api/" . $table -> name . "/list_all/',\n";
 		$str .= "\tmodel : " . $table -> name . "_model\n";
 		$str .= "});\n\n";
 		return $str;
 	}
-	
+
 	private function listFields(SQL_Table $table, $fields = false, $php = false) {
 		$ret = array();
 		if(!$fields) {
@@ -735,7 +746,7 @@ class Model_Generator {
 		}
 		return "string";
 	}
-	
+
 	/**
 	 * @param SQL_Table $table
 	 * @param SQL_Colspec $col
@@ -744,13 +755,13 @@ class Model_Generator {
 	private function validate_type(SQL_Table $table, SQL_Colspec $col) {
 		if($col -> type == "INT") {
 			return "\t\tif(!is_numeric(\$".$col -> name . ")) {\n" .
-				"\t\t\tthrow new Exception(\"" . $table -> name . "." . $col -> name . " must be numeric\");\n" .
-				"\t\t}\n";
+					"\t\t\tthrow new Exception(\"" . $table -> name . "." . $col -> name . " must be numeric\");\n" .
+					"\t\t}\n";
 		} else if($col -> type == "VARCHAR") {
 			if(isset($col -> size[0])) {
 				return "\t\tif(strlen(\$".$col -> name . ") > ".$col -> size[0]. ") {\n" .
-					"\t\t\tthrow new Exception(\"" . $table -> name . "." . $col -> name . " cannot be longer than ".$col -> size[0]. " characters\");\n" .
-					"\t\t}\n";
+						"\t\t\tthrow new Exception(\"" . $table -> name . "." . $col -> name . " cannot be longer than ".$col -> size[0]. " characters\");\n" .
+						"\t\t}\n";
 			}
 		} else if($col -> type == "ENUM") {
 			if(count($col -> values) > 0) {
@@ -761,8 +772,8 @@ class Model_Generator {
 		} else if($col -> type == "CHAR") {
 			if(isset($col -> size[0]) > 0) {
 				return "\t\tif(strlen(\$".$col -> name . ") != ".$col -> size[0]. ") {\n" .
-					"\t\t\tthrow new Exception(\"" . $table -> name . "." . $col -> name . " must consist of ".$col -> size[0]. " characters\");\n" .
-					"\t\t}\n";
+						"\t\t\tthrow new Exception(\"" . $table -> name . "." . $col -> name . " must consist of ".$col -> size[0]. " characters\");\n" .
+						"\t\t}\n";
 			}
 		} else if($col -> type == "TEXT") {
 			return "\t\t// TODO: Add TEXT validation to " . $table -> name . "." . $col -> name . "\n";

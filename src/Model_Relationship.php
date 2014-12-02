@@ -1,6 +1,6 @@
 <?php
 class Model_Relationship {
-	public $parent;
+	public $dest;
 	public $constraint;
 	
 	public $nullable;
@@ -11,7 +11,7 @@ class Model_Relationship {
 	public function __construct(SQL_Constraint $foreignKey, SQL_Database $database, array $children = array()) {
 		$tbl = $database -> table[$foreignKey -> parent_table];
 		$this -> constraint = $foreignKey;
-		$this -> parent = new Model_Entity($tbl, $database, $children);
+		$this -> dest = new Model_Entity($tbl, $database, $children);
 		
 		$this -> shortName = self::filterName($this -> constraint -> name, $children[count($children) - 1]);
 		

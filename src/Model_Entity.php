@@ -9,6 +9,14 @@ class Model_Entity {
 	public $parent;
 	public $table;
 
+	public $query_table_name; // For "SELECT Foo As Foo2". Unique in tree
+	public $model_storage_name; // Unique among siblings only
+
+	/**
+	 * @param SQL_Table $table
+	 * @param SQL_Database $database
+	 * @param array $children
+	 */
 	public function __construct(SQL_Table $table, SQL_Database $database, array $children = array()) {
 		/* Basic setup */
 		$this -> child = $this -> parent = array();
@@ -42,42 +50,169 @@ class Model_Entity {
 						$revConstraint = clone $constraint;
 						$revConstraint -> child_table = $t -> name;
 						$revConstraint -> reverse();
-						
+
 						$this -> child[] = new Model_Relationship($revConstraint, $database, array($t -> name));
 					}
 				}
 			}
 		}
+
+		/* Ensure uniqueness of parent and child names as siblings */
+		$this -> model_storage_name = $this -> table -> name; // Later over-ridden by parent if this isn't the root.
+		$nameTaken = array();
+		foreach($this -> parent as $rel) {
+			/* Find a unique name for this entity for the PHP model */
+			$num = 0;
+			do {
+				$testName = $rel -> shortName . ($num == 0 ? "" : $num);
+				$num++;
+			} while(isset($nameTaken[$testName]));
+			$nameTaken[$testName] = true;
+			$rel -> dest -> model_storage_name = $testName;
+		}
+		foreach($this -> child as $rel) {
+			/* More uniqueness */
+			$num = 0;
+			do {
+				if($table -> name == $rel -> shortName) {
+					$testName = $rel -> dest -> table -> name . ($num == 0 ? "" : $num);
+				} else {
+					$testName = $rel -> dest -> table -> name . "_by_" . $rel -> shortName . ($num == 0 ? "" : $num);
+				}
+				$num++;
+			} while(isset($nameTaken[$testName]));
+			$nameTaken[$testName] = true;
+			$rel -> dest -> model_storage_name = $testName;
+		}
+
+		/* Breadth-first search to name all sub-tables uniquely */
+		$this -> query_table_name = $this -> table -> name;
+		$nameTaken = array($this -> query_table_name);
+		$queue = array($this);
+		while(count($queue) != 0) {
+			$current = array_shift($queue);
+
+			/* Find a unique name for this entity when querying */
+			$num = 0;
+			do {
+				$testName = $current -> table -> name . ($num == 0 ? "" : $num);
+				$num++;
+			} while(isset($nameTaken[$testName]));
+			$nameTaken[$testName] = true;
+			$current -> query_table_name = $testName;
+
+			/* Add more */
+			foreach($current -> parent as $p) {
+				$queue[] = $p -> dest;
+			}
+		}
+
 	}
 
-	public function toGraphVizDot($id = null, $name = null, $toOne = false, $isChild = false) {
-		if($id == null) {
+	public function toGraphVizDotFile() {
+		return "digraph G {\n    overlap=false;rankdir=LR;splines=true;    \n    node[shape=record,colorscheme=set39,style=filled];\n    ".implode("\n    ", $this -> toGraphVizDot()) . "\n}\n";
+	}
+
+	/**
+	 * Generate GraphViz code for a table
+	 *
+	 * @param string $id
+	 * @param string $name
+	 * @param boolean $toOne
+	 * @param boolean $isChild
+	 * @return multitype:
+	 */
+	private function toGraphVizDot($id = null, $toOne = true, $isChild = false) {
+		if($id  == null) {
 			$col = 1;
-			$id = $name = $this -> table -> name;
-			$ret = array("\"" . $id . "\" [label=\"" . $this -> table -> name . "\",fillcolor=$col];");
+			$id = $this -> query_table_name;
+		} else if ($isChild) {
+			$col = 9;
 		} else {
-			if($isChild) {
-				$col = 9;
-			} else {
-				$col = 2;
-			}
-			$ret = array("\"" . $id . "\" [label=\"$name : " . $this -> table -> name . (!$toOne ? "[]" : "") . "\",fillcolor=$col];");
+			$col = 2;
 		}
+		$ret = array("\"" . $id . "\" [label=\"" . $this -> model_storage_name . " : " . $this -> table -> name . (!$toOne ? "[]" : "") . "\",fillcolor=$col];");
 
 		foreach($this -> parent as $next) {
-			$new_Id = $id.".".$next -> constraint -> name;
-			$ret = array_merge($ret, $next -> parent -> toGraphVizDot($new_Id, $next -> shortName, true));
+			$ret = array_merge($ret, $next -> dest -> toGraphVizDot($next -> dest -> query_table_name, true, false));
 			$dot = $next -> nullable ? " [arrowhead=teeodot]" : " [arrowhead=tee]";
-			$ret[] = "\"" . $id . "\" -> \"" . $new_Id . "\"$dot;";
+			$ret[] = "\"" . $id . "\" -> \"" . $next -> dest -> query_table_name . "\":w$dot;";
 		}
-		
-		foreach($this -> child as $next) {
-			$new_Id = $id.".child-".$next -> constraint -> name;
-			$ret = array_merge($ret, $next -> parent -> toGraphVizDot($new_Id, $next -> parent -> table -> name . "_by_" . $next -> shortName, $next -> toOne, true));
-			$dot = $next -> toOne ? " [arrowhead=teeodot,style=dashed]" : " [arrowhead=crow]";
-			$ret[] = "\"" . $id . "\" -> \"" . $new_Id . "\"$dot;";
+
+		foreach($this -> child as $childId => $next) {
+			$nextId = $this -> query_table_name . "-child-" . $next -> dest -> model_storage_name;
+			$ret = array_merge($ret, $next -> dest -> toGraphVizDot($nextId, $next -> toOne, true));
+			$dot = $next -> toOne ? " [arrowhead=teeodot,style=dashed]" : " [arrowhead=crowodot,style=dashed]";
+			$ret[] = "\"" . $id . "\" -> \"" . $nextId . "\":w$dot;";
 		}
-		
+
+		return $ret;
+	}
+
+	/**
+	 * Extract a data structure which can be used to build joins and variables.
+	 * 
+	 * @return Ambigous <multitype:multitype: NULL Ambigous <multitype:multitype:multitype:NULL, multitype:multitype:multitype:NULL   > , multitype:multitype: Ambigous <multitype:multitype:NULL, multitype:multitype:NULL multitype:string   > >
+	 */
+	public function process() {
+		$ret = array();
+		$ret['fields'] = self::extractFields($this);
+		$ret['join'] = array();
+
+		foreach($this -> parent as $p) {
+			/* Join to the parent table */
+			$ret['join'][] = array("table" => $p -> dest -> table -> name, "as" =>  $p -> dest -> query_table_name, "on" => self::extractIndexFields($this, $p));
+				
+			/* Merge lower-level info in */
+			$sub = $p -> dest -> process();
+			foreach($ret['fields'] as $id => $f) {
+				$ret['fields'][$id]['var'][] = $this -> model_storage_name;
+			}
+			
+			$ret['fields'] = array_merge($ret['fields'], $sub['fields']);
+			$ret['join'] = array_merge($ret['join'], $sub['join']);
+		}
+		return $ret;
+	}
+
+	/**
+	 * Extract list of fields for a table, labelled by the actual table
+	 * 
+	 * @param Model_Entity $e
+	 * @return multitype:multitype:NULL  
+	 */
+	private static function extractFields(Model_Entity $e) {
+		$ret = array();
+		foreach($e -> table -> cols as $col) {
+			$ret[] = array(
+					"table" => $e -> query_table_name,
+					"col" => $col -> name,
+					"var" => array($e -> model_storage_name)
+				);
+		}
+		return $ret;
+	}
+
+	/**
+	 * Extract fields to JOIN on
+	 * 
+	 * @param Model_Entity $child
+	 * @param Model_Relationship $r
+	 * @throws Exception
+	 * @return multitype:multitype:multitype:NULL  multitype:NULL string   
+	 */
+	private static function extractIndexFields(Model_Entity $child, Model_Relationship $r) {
+		if(count($r -> constraint -> child_fields) != count($r -> constraint -> parent_table)) {
+			throw new Exception("Index size mis-match: " . $r -> constraint -> name);
+		}
+
+		$ret = array();
+		for($i = 0; $i < count($r -> constraint -> child_fields); $i++) {
+			$ret[] = array(
+				array("table" => $r -> dest -> query_table_name, "col" => $r -> constraint -> parent_fields[$i]),
+				array("table" => $child -> query_table_name, "col" => $r -> constraint -> child_fields[$i])
+			);
+		}
 		return $ret;
 	}
 
@@ -89,6 +224,7 @@ class Model_Entity {
 	 * @return boolean
 	 */
 	private static function find_index(SQL_Table $table, array $child_fields) {
+		// TODO find all uses of this function and remove them
 		foreach($table -> index as $index) {
 			if(self::field_match($index -> fields, $child_fields)) {
 				return $index -> name;
@@ -117,7 +253,6 @@ class Model_Entity {
 		}
 		return true;
 	}
-
 
 	/// ...
 
