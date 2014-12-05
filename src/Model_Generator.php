@@ -248,28 +248,37 @@ class Model_Generator {
 		/* From array('foo', 'bar', 'baz') to array('a.weeble' => 'foo', 'a.warble' => bar, 'b.beeble' => 'baz') */
 		$str .= "\n" . $this -> block_comment("Convert retrieved database row from numbered to named keys, including table name\n\n@param array \$row ror retrieved from database\n@return array row with indices", 1);
 		$str .= "\tprivate static function row_to_assoc(array \$row) {\n";
-		$str .= "\t\t\$values = array();\n";
+		$str .= "\t\t\$" . $entity -> query_table_name . " = array();\n";
 		$stack = array();
+		$stackVarname = array();
 		foreach($data['fields'] as $num => $field) {
 			//$cols[] = "\t\t\t\"$name\" => \$row[$num]";
 			if(count($field['var']) == 0) {
-				$str .= "\t\t\$values['" . $field['col'] . "'] = \$row[$num];";
+				$str .= "\t\t\$" . $entity -> query_table_name . "['" . $field['col'] . "'] = \$row[$num];";
 			} else {
-				
-				//if(count($stack) < count($field['var'])) {
-				//	// Indent
-				//	array_push($stack, $field['var'][0]);
-				//	$str .= "if(true) {\n";
-				//} else if(count($stack) > count($field['var'])) {
-				//	// Un-indent
-				//	array_pop($stack);
-				//	$str .= "}\n";				
-				//}
-
-				$str .= "\t\t\$values['".implode("']['", $field['var'])."']['" . $field['col'] . "'] = \$row[$num];";
+				while(self::stack_compare($field['var'], $stack) == -1) {
+					$str .= "\t\t" . str_repeat("\t", count($stack)) . "// = \$".$stackVarname[count($stackVarname) - 1] ."\n";
+					array_pop($stack);
+					array_pop($stackVarname);
+					$str .= "\t\t" . str_repeat("\t", count($stack)) . "}\n";
+				}
+				while(self::stack_compare($field['var'], $stack) == 1) {
+					// TODO find retrieved PK fields
+				//	$str .= " // " . $field['table_orig'];
+					$str .= "\t\t" . str_repeat("\t", count($stack)) . "if(true) {\n";
+					array_push($stack, $field['var'][count($stack)]);
+					array_push($stackVarname, $field['table']);
+					$varname = $field['table'];
+				}
+				//$str .= "\t\t" . str_repeat("\t", count($stack)) . "\$values['".implode("']['", $field['var'])."']['" . $field['col'] . "'] = \$row[$num];";
+				$str .= "\t\t" . str_repeat("\t", count($stack)) . "\$" . $field['table'] . "['" . $field['col'] . "'] = \$row[$num];";
 			}
-			$str .= " // " . $field['table_orig'];
 			$str .= "\n";
+		}
+		while(self::stack_compare(array(), $stack) == -1) {
+			// TODO finalise here
+			array_pop($stack);
+			$str .= "\t\t" . str_repeat("\t", count($stack)) . "}\n";
 		}
 	//	$str .= "\t\t\$values = array(". (count($cols) > 0? "\n". implode(",\n", $cols) : "") . ");\n";
 	
@@ -880,5 +889,17 @@ class Model_Generator {
 			return $in;
 		}
 		return strtoupper(substr($in, 0, 1)) . substr($in, 1, strlen($in) - 1);
+	}
+
+	private static function stack_compare($stack1, $stack2) {
+		for($i = 0; $i < count($stack2); $i++) {
+			if(!isset($stack1[$i]) || $stack1[$i] != $stack2[$i]) {
+				return -1;
+			}
+		}
+		if(isset($stack1[$i])) {
+			return 1;
+		}
+		return 0;
 	}
 }
