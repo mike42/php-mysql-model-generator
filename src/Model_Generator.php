@@ -66,46 +66,37 @@ class Model_Generator {
 		$dot .= ".dot";
 		$pdf .= ".pdf";
 		file_put_contents($dot, $entity -> toGraphVizDotFile());
-		$cmd = sprintf("dot -Tpdf %s > %s", 
-			escapeshellarg($dot),
-			escapeshellarg($pdf)
+		$cmd = sprintf("dot -Tpdf %s > %s",
+				escapeshellarg($dot),
+				escapeshellarg($pdf)
 		);
 		system($cmd);
 	}
-	
+
 	private function make_model(Model_Entity $entity) {
 		$data = $entity -> process();
-		
-
-		return;
-		// TODO all below code is un-reachable
 
 		/* Figure out PK */
 		$pkfields = array();
 		$pkfields_name_only = array();
-		foreach($table -> pk as $fieldname) {
-			$pkfields[] = "`" . $table -> name . "`.`$fieldname` = :$fieldname";
-			$pkfields_name_only[] = "`" . $table -> name . "`.`$fieldname`";
+		foreach($entity -> table -> pk as $fieldname) {
+			$pkfields[] = self::wrapField($entity -> query_table_name, $fieldname) . " = :$fieldname";
+			$pkfields_name_only[] = self::wrapField($entity -> query_table_name, $fieldname);
 		}
 
 		/* Figure out JOIN clause to use on every SELECT */
-		$join = $this -> getJOIN($table -> name);
-
-
-		// TODO print info here for processing
-		print_r($join);
-		return;
+		$qry = $this -> getQuery($entity, $data);
 
 		/* Generate model */
-		$str = "<?php\nclass ".$table -> name . "_model {\n";
-		foreach($table -> cols as $col) {
+		$str = "<?php\nclass ".$entity -> table -> name . "_Model {\n";
+		foreach($entity -> table -> cols as $col) {
 			/* Class variables */
 			$str .= $this -> block_comment("@var " . $this -> primitive($col) . " " . $col -> name . ($col -> comment != ""? " " . $col -> comment: ""), 1);
 			$str .= "\tprivate $" . $col -> name . ";\n\n";
 		}
 		$str .= "\tprivate \$model_variables_changed; // Only variables which have been changed\n";
 		$str .= "\tprivate \$model_variables_set; // All variables which have been set (initially or with a setter)\n";
-		foreach($table -> cols as $col) {
+		foreach($entity -> table -> cols as $col) {
 			/* Enum values */
 			if($col -> type == "ENUM") {
 				$val = array();
@@ -117,82 +108,97 @@ class Model_Generator {
 		}
 
 		/* Parent tables */
-		if(count($table -> constraints) != 0) {
+		if(count($entity -> parent) != 0) {
 			$str .= "\n\t/* Parent tables */\n";
-			foreach($table -> constraints as $fk) {
-				if($fk -> parent_table != $table -> name) { // Tables which reference themselves do not go well with this!
-					$str .= "\tpublic \$".$fk -> parent_table . ";\n";
-				}
+			foreach($entity -> parent as $parent) {
+				$str .= "\tpublic \$". $parent -> dest -> model_storage_name . ";\n";
 			}
 		}
 
 		/* Child tables */
-		if(isset($this -> rev_constraints[$table -> name]) && count($this -> rev_constraints[$table -> name]) != 0) {
+		if(count($entity -> child) != 0) {
 			$str .= "\n\t/* Child tables */\n";
-			foreach($this -> rev_constraints[$table -> name] as $child => $fk) {
-				$str .= "\tpublic \$list_".$child . ";\n";
+			foreach($entity -> child as $child) {
+				$str .= "\tpublic \$". $child -> dest -> model_storage_name . ";\n";
 			}
 		}
 
-		/* Sort */
+		/* Main query */
+		$str .= "\n\t/* Query to greedy-fetch from this table  */\n";
+		$str .= "\tconst SELECT_QUERY = \"". $qry . "\";\n";
+
+		/* Sort (PK by default) */
 		$str .= "\n\t/* Sort clause to add when listing rows from this table */\n";
 		$str .= "\tconst SORT_CLAUSE = \" ORDER BY " . implode(", ", $pkfields_name_only) . "\";\n";
-
 
 		/* Init and load related tables */
 		$str .= "\n" . $this -> block_comment("Initialise and load related tables", 1);
 		$str .= "\tpublic static function init() {\n";
-		$str .= "\t\tcore::loadClass(\"database\");\n";
-		if(count($table -> constraints) != 0) {
-			foreach($table -> constraints as $fk) {
-				if($fk -> parent_table != $table -> name) { // Tables which reference themselves do not go well with this!
-					$str .= "\t\tcore::loadClass(\"".$fk -> parent_table . "_model\");\n";
+		$str .= "\t\tcore::loadClass(\"Database\");\n";
+
+		/* Load classes for related tables */
+		$inc = array(); // Because the table can be referenced in different ways
+		if(count($entity -> parent) != 0 || count($entity -> child) != 0) {
+			$str .= "\n\t\t/* Load related tables */\n";
+			foreach($entity -> parent as $parent) {
+				if(!isset($inc[$parent -> dest -> table -> name])) {
+					$str .= "\t\tcore::loadClass(\"".$parent -> dest -> table -> name . "_Model\");\n";
+					$inc[$parent -> dest -> table -> name] = true;
 				}
 			}
-		}
-		if(isset($this -> rev_constraints[$table -> name]) && count($this -> rev_constraints[$table -> name]) != 0) {
-			$str .= "\n\t\t/* Child tables */\n";
-			foreach($this -> rev_constraints[$table -> name] as $child => $fk) {
-				$str .= "\t\tcore::loadClass(\"".$child . "_model\");\n";
+			foreach($entity -> child as $child) {
+				if(!isset($inc[$child -> dest -> table -> name])) {
+					$str .= "\t\tcore::loadClass(\"".$child -> dest -> table -> name . "_Model\");\n";
+					$inc[$child -> dest -> table -> name] = true;
+				}
 			}
 		}
 		$str .= "\t}\n";
 
 		/* Constructor */
-		$str .= "\n" . $this -> block_comment("Construct new " . $table -> name . " from field list\n\n@return array", 1);
+		$str .= "\n" . $this -> block_comment("Construct new " . $entity -> table -> name . " from field list\n\n@return array", 1);
 		$str .= "\tpublic function __construct(array \$fields = array()) {\n";
-		if(count($table -> cols) != 0) {
+		if(count($entity -> table -> cols) != 0) {
 			$str .= "\t\t/* Initialise everything as blank to avoid tripping up the permissions fitlers */\n";
-			foreach($table -> cols as $col) {
+			foreach($entity -> table -> cols as $col) {
 				$str .= "\t\t\$this -> " . $col -> name . " = '';\n";
 			}
+			foreach($entity -> parent as $parent) {
+				$str .= "\t\t\$this -> " . $parent -> dest -> model_storage_name . " = null;\n";
+			}
 			$str .= "\n";
-				
-			foreach($table -> cols as $col) {
-				$str .= "\t\tif(isset(\$fields['" . $table -> name . "." . $col -> name . "'])) {\n" .
-						"\t\t\t\$this -> set_" . $col -> name . "(\$fields['" . $table -> name . "." . $col -> name . "']);\n" .
+
+			$str .= "\t\t/* Set variables based on what information we have */\n";
+			foreach($entity -> table -> cols as $col) {
+				$str .= "\t\tif(isset(\$fields['" . $col -> name . "'])) {\n" .
+						"\t\t\t\$this -> set" . self::titleCase($col -> name) . "(\$fields['" . $col -> name . "']);\n" .
 						"\t\t}\n";
 			}
-			$str .= "\n";
+			$str .= "\t\t\$this -> model_variables_changed = array();\n";
 		}
-		$str .= "\t\t\$this -> model_variables_changed = array();\n";
-		foreach($table -> constraints as $fk) {
-			if($fk -> parent_table != $table -> name) { // Tables which reference themselves do not go well with this
-				$str .= "\t\t\$this -> ".$fk -> parent_table . " = new " . $fk -> parent_table . "_model(\$fields);\n";
+		if(count($entity -> parent) != 0) {
+			$str .= "\n";
+			$str .= "\t\t/* Load parent tables if set */\n";
+			foreach($entity -> parent as $parent) {
+				$str .= "\t\tif(isset(\$fields['" . $parent -> dest -> model_storage_name . "'])) {\n" .
+						"\t\t\t\$this -> " . $parent -> dest -> model_storage_name . " = new " . $parent -> dest -> table -> name . "_Model(\$fields['" . $parent -> dest -> model_storage_name . "']);\n" .
+						"\t\t}\n";
 			}
 		}
-		if(isset($this -> rev_constraints[$table -> name]) && count($this -> rev_constraints[$table -> name]) != 0) {
-			foreach($this -> rev_constraints[$table -> name] as $child => $fk) {
-				$str .= "\t\t\$this -> list_".$child . " = array();\n";
+		if(count($entity -> child) != 0) {
+			$str .= "\n";
+			$str .= "\t\t/* Don't load child tables */\n";
+			foreach($entity -> child as $child) {
+				$str .= "\t\t\$this -> " . $child -> dest -> model_storage_name . " = " . ( !$child -> toOne ? "array()" : "null") .  ";\n";
 			}
 		}
 		$str .= "\t}\n";
 
 		/* To array */
-		$str .= "\n" . $this -> block_comment("Convert " . $table -> name . " to shallow associative array\n\n@return array", 1);
-		$str .= "\tprivate function to_array() {\n";
+		$str .= "\n" . $this -> block_comment("Convert " . $entity -> table -> name . " to shallow associative array\n\n@return array", 1);
+		$str .= "\tprivate function toArray() {\n";
 		$fieldlist = array();
-		foreach($table -> cols as $col) {
+		foreach($entity -> table -> cols as $col) {
 			$fieldlist[] = "\t\t\t'".$col -> name . "' => \$this -> " . $col -> name . "";
 		}
 		$str .= "\t\t\$values = array(".(count($fieldlist) > 0 ? "\n" . implode(",\n", $fieldlist) : "") .  ");\n";
@@ -200,53 +206,87 @@ class Model_Generator {
 		$str .= "\t}\n";
 
 		/* To restricted array (eg. for user output) */
-		$str .= "\n" . $this -> block_comment("Convert " . $table -> name . " to associative array, including only visible fields,\n" .
+		$str .= "\n" . $this -> block_comment("Convert " . $entity -> table -> name . " to associative array, including only visible fields,\n" .
 				"parent tables, and loaded child tables\n\n" .
 				"@param string \$role The user role to use", 1);
 		$str .= "\tpublic function to_array_filtered(\$role = \"anon\") {\n" .
-				"\t\tif(core::\$permission[\$role]['" . $table -> name ."']['read'] === false) {\n" .
+				"\t\tif(core::\$permission[\$role]['" . $entity -> table -> name ."']['read'] === false) {\n" .
 				"\t\t\treturn false;\n" .
 				"\t\t}\n" .
 				"\t\t\$values = array();\n" .
 				"\t\t\$everything = \$this -> to_array();\n" .
-				"\t\tforeach(core::\$permission[\$role]['" . $table -> name ."']['read'] as \$field) {\n" .
+				"\t\tforeach(core::\$permission[\$role]['" . $entity -> table -> name ."']['read'] as \$field) {\n" .
 				"\t\t\tif(!isset(\$everything[\$field])) {\n" .
-				"\t\t\t\tthrow new Exception(\"Check permissions: '\$field' is not a real field in " . $table -> name ."\");\n" .
+				"\t\t\t\tthrow new Exception(\"Check permissions: '\$field' is not a real field in " . $entity -> table -> name ."\");\n" .
 				"\t\t\t}\n" .
 				"\t\t\t\$values[\$field] = \$everything[\$field];\n" .
 				"\t\t}\n";
-		/* List out parent tables */
-		if(count($table -> constraints) != 0) {
-			foreach($table -> constraints as $fk) {
-				if($fk -> parent_table != $table -> name) { // Tables which reference themselves do not go well with this!
-					$str .= "\t\t\$values['".$fk -> parent_table . "'] = \$this -> ". $fk -> parent_table. " -> to_array_filtered(\$role);\n";
-				}
-			}
-		}
-		if(isset($this -> rev_constraints[$table -> name]) && count($this -> rev_constraints[$table -> name]) != 0) {
+		if(count($entity -> parent) != 0 || count($entity -> child) != 0) {
 			$str .= "\n\t\t/* Add filtered versions of everything that's been loaded */\n";
-			foreach($this -> rev_constraints[$table -> name] as $child => $fk) {
-				$str .= "\t\t\$values['$child'] = array();\n";
+			
+			foreach($entity -> parent as $parent) {
+				$str .= "\t\tif(\$this -> " . $parent -> dest -> model_storage_name . " !== null) {\n" .
+						"\t\t\t\$values['". $parent -> dest -> model_storage_name . "'] = \$this -> " . $parent -> dest -> model_storage_name . " -> to_array_filtered(\$role);\n" .
+						"\t\t}\n";
 			}
-			foreach($this -> rev_constraints[$table -> name] as $child => $fk) {
-				$str .= "\t\tforeach(\$this -> list_".$child . " as \$$child) {\n";
-				$str .= "\t\t\t\$values['$child'][] = \$$child -> to_array_filtered(\$role);\n";
-				$str .= "\t\t}\n";
-			}
+			foreach($entity -> child as $child) {
+				if($child -> toOne) {
+					$str .= "\t\tif(\$this -> " . $child -> dest -> model_storage_name . " !== null) {\n" .
+							"\t\t\t\$values['". $child -> dest -> model_storage_name . "'] = \$this -> " . $parent -> dest -> model_storage_name . " -> to_array_filtered(\$role);\n" .
+							"\t\t}\n";
+				} else {
+					$str .= "\t\t\$values['". $child -> dest -> model_storage_name . "'] = array();\n";
+					$str .= "\t\tforeach(\$this -> ". $child -> dest -> model_storage_name . " as \$" . strtolower($child -> dest -> model_storage_name) . ") {\n";
+					$str .= "\t\t\t\$values['". $child -> dest -> model_storage_name . "'][] = \$" . strtolower($child -> dest -> model_storage_name) . " -> to_array_filtered(\$role);\n";
+					$str .= "\t\t}\n";
+				}
+			}		
 		}
 		$str .=	"\t\treturn \$values;\n" .
-				"\t}\n";
+		"\t}\n";
 
 		/* From array('foo', 'bar', 'baz') to array('a.weeble' => 'foo', 'a.warble' => bar, 'b.beeble' => 'baz') */
 		$str .= "\n" . $this -> block_comment("Convert retrieved database row from numbered to named keys, including table name\n\n@param array \$row ror retrieved from database\n@return array row with indices", 1);
 		$str .= "\tprivate static function row_to_assoc(array \$row) {\n";
-		$cols = array();
-		foreach($join['fields-notick'] as $num => $name) {
-			$cols[] = "\t\t\t\"$name\" => \$row[$num]";
+		$str .= "\t\t\$values = array();\n";
+		$stack = array();
+		foreach($data['fields'] as $num => $field) {
+			//$cols[] = "\t\t\t\"$name\" => \$row[$num]";
+			if(count($field['var']) == 0) {
+				$str .= "\t\t\$values['" . $field['col'] . "'] = \$row[$num];";
+			} else {
+				
+				//if(count($stack) < count($field['var'])) {
+				//	// Indent
+				//	array_push($stack, $field['var'][0]);
+				//	$str .= "if(true) {\n";
+				//} else if(count($stack) > count($field['var'])) {
+				//	// Un-indent
+				//	array_pop($stack);
+				//	$str .= "}\n";				
+				//}
+
+				$str .= "\t\t\$values['".implode("']['", $field['var'])."']['" . $field['col'] . "'] = \$row[$num];";
+			}
+			$str .= " // " . $field['table_orig'];
+			$str .= "\n";
 		}
-		$str .= "\t\t\$values = array(". (count($cols) > 0? "\n". implode(",\n", $cols) : "") . ");\n";
+	//	$str .= "\t\t\$values = array(". (count($cols) > 0? "\n". implode(",\n", $cols) : "") . ");\n";
+	
 		$str .= "\t\treturn \$values;\n";
 		$str .= "\t}\n";
+		
+		/* Finalise and output */
+		$str .= "}\n?>";
+		$fn = $this -> base . "/lib/model/" . $entity -> table -> name . "_model.php";
+		file_put_contents($fn, $str);
+		echo $str . "\n";
+		include($fn); // Very crude syntax check
+		unset($inc);
+		if($entity -> table -> name == "Person") {
+			die();
+		}
+		return;
 
 		/* Getters and setters */
 		foreach($table -> cols as $col) {
@@ -445,7 +485,7 @@ class Model_Generator {
 			if($this -> primitive($col) != "string") {
 				continue;
 			}
-				
+
 			$str .= "\n" . $this -> block_comment("Simple search within " . $col -> name . " field\n\n" .
 					"@param int \$start Row to begin from. Default 0 (begin from start)\n" .
 					"@param int \$limit Maximum number of rows to retrieve. Default -1 (no limit)", 1);
@@ -469,14 +509,11 @@ class Model_Generator {
 			$str .= "\t}\n";
 		}
 
-		/* Finalise and output */
-		$str .= "}\n?>";
-		file_put_contents($this -> base . "/lib/model/" . $table -> name . "_model.php", $str);
 	}
 
 	private function make_controller(Model_Entity $entity) {
 		return;
-		
+
 		// TODO
 		$pkfields = $this -> listFields($table, $table -> pk, true);
 		$pkfields_defaults = array();
@@ -799,5 +836,49 @@ class Model_Generator {
 		}
 		$outp .= " */\n";
 		return $outp;
+	}
+	
+	/**
+	 * Build the start of a query from an entity and data about its available fields and joins
+	 * 
+	 * @param array $data
+	 */
+	private function getQuery(Model_Entity $entity, array $data) {
+		/* Fetch a list of fields */
+		$fields = array();
+		foreach($data['fields'] as $field) {
+			$fields[] = self::wrapField($field['table'], $field['col']);
+		}		
+
+		/* Compile the JOIN statements */
+		$joins = array(self::wrapTable($entity -> table -> name, $entity -> query_table_name));
+		foreach($data['join'] as $join) {
+			$on = array();
+			foreach($join['on'] as $o) {
+				$on[] = self::wrapField($o[0]['table'], $o[0]['col']) . " = " . self::wrapField($o[1]['table'], $o[1]['col']);
+			}
+			$joins[] = "LEFT JOIN " . self::wrapTable($join['table'], $join['as']) . " ON " . implode(" AND ", $on);
+		}
+		
+		$query = "SELECT " . implode(", ", $fields) . " FROM " . implode(" ", $joins) . " ";
+		return $query;
+	}
+	
+	private static function wrapTable($table, $as) {
+		if($table == $as) {
+			return "`$table`";
+		}
+		return "`$table` As `$as`";
+	}
+	
+	private static function wrapField($table, $field) {
+		return "`$table`.`$field`";
+	}
+	
+	private static function titleCase($in) {
+		if(strlen($in) == 0) {
+			return $in;
+		}
+		return strtoupper(substr($in, 0, 1)) . substr($in, 1, strlen($in) - 1);
 	}
 }

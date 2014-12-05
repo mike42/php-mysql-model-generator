@@ -106,7 +106,6 @@ class Model_Entity {
 				$queue[] = $p -> dest;
 			}
 		}
-
 	}
 
 	public function toGraphVizDotFile() {
@@ -165,8 +164,8 @@ class Model_Entity {
 				
 			/* Merge lower-level info in */
 			$sub = $p -> dest -> process();
-			foreach($ret['fields'] as $id => $f) {
-				$ret['fields'][$id]['var'][] = $this -> model_storage_name;
+			foreach($sub['fields'] as $id => $f) {
+				array_unshift($sub['fields'][$id]['var'], $p -> dest -> model_storage_name);
 			}
 			
 			$ret['fields'] = array_merge($ret['fields'], $sub['fields']);
@@ -186,8 +185,9 @@ class Model_Entity {
 		foreach($e -> table -> cols as $col) {
 			$ret[] = array(
 					"table" => $e -> query_table_name,
+					"table_orig" => $e -> table -> name,
 					"col" => $col -> name,
-					"var" => array($e -> model_storage_name)
+					"var" => array()
 				);
 		}
 		return $ret;
