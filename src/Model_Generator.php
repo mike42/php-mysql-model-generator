@@ -246,7 +246,7 @@ class Model_Generator {
 		"\t}\n";
 
 		/* From array('foo', 'bar', 'baz') to array('a.weeble' => 'foo', 'a.warble' => bar, 'b.beeble' => 'baz') */
-		$str .= "\n" . $this -> block_comment("Convert retrieved database row from numbered to named keys, including table name\n\n@param array \$row ror retrieved from database\n@return array row with indices", 1);
+		$str .= "\n" . $this -> block_comment("Convert retrieved database row from numbered to named keys, arranged in a hierarchy\n\n@param array \$row ror retrieved from database\n@return array row with indices", 1);
 		$str .= "\tprivate static function row_to_assoc(array \$row) {\n";
 		$cols = array();
 		foreach($data['fields'] as $num => $field) {
@@ -371,7 +371,7 @@ class Model_Generator {
 		$str .= "\t\t\$fields = implode(\", \", \$fieldset);\n" .
 				"\t\t\$vals = implode(\", \", \$fieldset_colon);\n\n" .
 				"\t\t/* Execute query */\n" .
-				"\t\t\$sth = database::\$dbh -> prepare(\"INSERT INTO `".$entity -> table -> name . "` (\$fields) VALUES (\$vals);\");\n";
+				"\t\t\$sth = Database::\$dbh -> prepare(\"INSERT INTO `".$entity -> table -> name . "` (\$fields) VALUES (\$vals);\");\n";
 		$str .= "\t\t\$sth -> execute(\$data);\n";
 		if(count($entity -> table -> pk) == 1) {
 			// Auto-increment keys etc
@@ -382,7 +382,7 @@ class Model_Generator {
 		/* Delete */
 		$str .= "\n" . $this -> block_comment("Delete " . $entity -> table -> name, 1);
 		$str .= "\tpublic function delete() {\n";
-		$str .= "\t\t\$sth = database::\$dbh -> prepare(\"DELETE FROM `".$entity -> table -> name . "` WHERE " . implode(" AND ", $pkfields). "\");\n";
+		$str .= "\t\t\$sth = Database::\$dbh -> prepare(\"DELETE FROM `".$entity -> table -> name . "` WHERE " . implode(" AND ", $pkfields). ";\");\n";
 		foreach($entity -> table -> pk as $fieldname) {
 			$str .= "\t\t\$data['$fieldname'] = \$this -> get" . self::titleCase($fieldname). "();\n";
 		}
@@ -391,17 +391,41 @@ class Model_Generator {
 		
 		/* Populate child tables */
 		foreach($entity -> child as $child) {
-			$str .= "\n" . $this -> block_comment("List related rows from " . $child -> dest -> table -> name  . " table\n\n" .
+			$str .= "\n" . $this -> block_comment("Load related rows from " . $child -> dest -> table -> name  . " table\n\n" .
 					"@param int \$start Row to begin from. Default 0 (begin from start)\n" .
 					"@param int \$limit Maximum number of rows to retrieve. Default -1 (no limit)", 1);
-			$str .= "\tpublic function populate_list_".$child . "(\$start = 0, \$limit = -1) {\n";
-			for($i = 0; $i < count($fk -> child_fields); $i++) {
-				$str .= "\t\t\$".$fk -> child_fields[$i] . " = \$this -> get_".$fk -> parent_fields[$i]."();\n";
+			$str .= "\tpublic function load".self::titleCase($child -> dest -> model_storage_name). "(\$start = 0, \$limit = -1) {\n";
+			for($i = 0; $i < count($child -> constraint -> child_fields); $i++) {
+				$str .= "\t\t\$".$child -> constraint -> child_fields[$i] . " = \$this -> get".self::titleCase($child -> constraint -> parent_fields[$i])."();\n";
 			}
-			$str .= "\t\t\$this -> list_".$child." = ".$child . "_model::list_by_".$fk -> name ."(". implode(",", $this -> listFields($this -> database -> table[$child], $fk -> child_fields, true)) .", \$start, \$limit);\n";
+			
+			$f = $child -> toOne ? "get" : "list";
+			$joinFields = implode(",", $this -> listFields($this -> database -> table[$child -> dest -> table -> name], $child -> constraint -> parent_fields, true));
+			$str .= "\t\t\$this -> " . $child -> dest -> model_storage_name ." = " . $child -> dest -> table -> name . "_Model::${f}By" . self::titleCase($child -> shortName) ."(". $joinFields .", \$start, \$limit);\n";
 			$str .= "\t}\n";
-			die();
 		}
+
+		/* Get by primary key */
+		$info = self::keyDocumentation($entity -> table, $entity -> table -> pk);
+		$str .= "\n" . $this -> block_comment("Retrieve by primary key\n\n" . implode("\n",$info), 1);
+		$str .= "\tpublic static function get(";
+		$str .= implode(", ", $this -> listFields($entity -> table, $entity -> table -> pk, true));
+		$str .= ") {\n";
+		$conditions = $arrEntry = array();
+		foreach($entity -> table -> pk as $field) {
+			$conditions[] = self::wrapField($entity -> table -> name, $field) ." = :$field";
+			$arrEntry[] = "'$field' => \$$field";
+		}
+		$sql = "WHERE " . implode(" AND ", $conditions);
+		$str .= "\t\t\$sth = Database::\$dbh -> prepare(self::SELECT_QUERY . \"$sql;\");\n";
+		$str .= "\t\t\$sth -> execute(array(" . implode(", ", $arrEntry) . "));\n";
+		$str .= "\t\t\$row = \$sth -> fetch(PDO::FETCH_NUM);\n";
+		$str .= "\t\tif(\$row === false){\n";
+		$str .= "\t\t\treturn false;\n";
+		$str .= "\t\t}\n";
+		$str .= "\t\t\$assoc = self::row_to_assoc(\$row);\n";
+		$str .= "\t\treturn new " . $entity -> table -> name . "_Model(\$assoc);\n";
+		$str .= "\t}\n";
 		
 		/* Finalise and output */
 		$str .= "}\n?>";
@@ -409,54 +433,8 @@ class Model_Generator {
 		file_put_contents($fn, $str);
 		echo $str . "\n";
 		include($fn); // Very crude syntax check
-		unset($inc);
+		unset($inc); // Why is this here? TODO
 		return;
-		
-		if(count($entity -> child) > 0) {
-			print_r($entity -> child);
-			
-			
-			
-		}
-		
-		// TODO
-		if(isset($this -> rev_constraints[$table -> name]) && count($this -> rev_constraints[$table -> name]) != 0) {
-			foreach($this -> rev_constraints[$table -> name] as $child => $fk) {
-				$str .= "\n" . $this -> block_comment("List associated rows from " . $child . " table\n\n" .
-						"@param int \$start Row to begin from. Default 0 (begin from start)\n" .
-						"@param int \$limit Maximum number of rows to retrieve. Default -1 (no limit)", 1);
-				$str .= "\tpublic function populate_list_".$child . "(\$start = 0, \$limit = -1) {\n";
-				for($i = 0; $i < count($fk -> child_fields); $i++) {
-					$str .= "\t\t\$".$fk -> child_fields[$i] . " = \$this -> get_".$fk -> parent_fields[$i]."();\n";
-				}
-				$str .= "\t\t\$this -> list_".$child." = ".$child . "_model::list_by_".$fk -> name ."(". implode(",", $this -> listFields($this -> database -> table[$child], $fk -> child_fields, true)) .", \$start, \$limit);\n";
-				$str .= "\t}\n";
-			}
-		}
-		
-// ------------------------------------
-
-		/* Get by primary key */
-		$str .= "\n" . $this -> block_comment("Retrieve by primary key", 1);
-		// TODO: Key info
-		$str .= "\tpublic static function get(";
-		$str .= implode(", ", $this -> listFields($table, $table -> pk, true));
-		$str .= ") {\n";
-		$conditions = $arrEntry = array();
-		foreach($table -> pk as $field) {
-			$conditions[] = "`" . $table -> name . "`.`" . $field . "` = :$field";
-			$arrEntry[] = "'$field' => \$$field";
-		}
-		$sql = "SELECT " . implode(", ", $join['fields']) . " FROM " . $table -> name . " " . $join['clause'] . " WHERE " . implode(" AND ", $conditions);
-		$str .= "\t\t\$sth = database::\$dbh -> prepare(\"$sql;\");\n";
-		$str .= "\t\t\$sth -> execute(array(" . implode(", ", $arrEntry) . "));\n";
-		$str .= "\t\t\$row = \$sth -> fetch(PDO::FETCH_NUM);\n";
-		$str .= "\t\tif(\$row === false){\n";
-		$str .= "\t\t\treturn false;\n";
-		$str .= "\t\t}\n";
-		$str .= "\t\t\$assoc = self::row_to_assoc(\$row);\n";
-		$str .= "\t\treturn new " . $table -> name . "_model(\$assoc);\n";
-		$str .= "\t}\n";
 
 		/* Get by unique indices */
 		foreach($table -> unique as $unique) {
@@ -821,7 +799,7 @@ class Model_Generator {
 		return $str;
 	}
 
-	private function listFields(SQL_Table $table, $fields = false, $php = false) {
+	private function listFields(SQL_Table $table, $fields = false, $php = false) {	
 		$ret = array();
 		if(!$fields) {
 			foreach($table -> cols as $col) {
@@ -876,6 +854,13 @@ class Model_Generator {
 		return "\t\t// TODO: Add validation to " . $table -> name . "." . $col -> name . "\n";
 	}
 
+	/**
+	 * Generate a whopping big block comment out of a paragraph.
+	 * 
+	 * @param string $str Comment. Should be pre-wrapped.
+	 * @param string $indent Number of tabs to insert before each line.
+	 * @return string
+	 */
 	private function block_comment($str, $indent) {
 		$lines = explode("\n", $str);
 		$outp = "";
@@ -922,6 +907,13 @@ class Model_Generator {
 		return $query;
 	}
 	
+	/**
+	 * Utility for getQuery() to use.
+	 * 
+	 * @param string $table Name of the table in the database
+	 * @param string $as Name to retrieve it as
+	 * @return string SQL to retrieve the table as this nmae
+	 */
 	private static function wrapTable($table, $as) {
 		if($table == $as) {
 			return "`$table`";
@@ -929,10 +921,23 @@ class Model_Generator {
 		return "`$table` As `$as`";
 	}
 	
+	/**
+	 * Utility for getQuery() to use.
+	 * 
+	 * @param string $table
+	 * @param string $field
+	 * @return string "`$table`.`$field`"
+	 */
 	private static function wrapField($table, $field) {
 		return "`$table`.`$field`";
 	}
 	
+	/**
+	 * Convert first character of a string to uppercase
+	 * 
+	 * @param string $in
+	 * @return string
+	 */
 	private static function titleCase($in) {
 		if(strlen($in) == 0) {
 			return $in;
@@ -940,7 +945,14 @@ class Model_Generator {
 		return strtoupper(substr($in, 0, 1)) . substr($in, 1, strlen($in) - 1);
 	}
 
-	private static function stack_compare($stack1, $stack2) {
+	/**
+	 * Compare two stacks, and return 1, 0 or -1 depending on how they differ. Specifically used to convert numbered columns into objects.
+	 * 
+	 * @param array $stack1
+	 * @param array $stack2
+	 * @return number
+	 */
+	private static function stack_compare(array $stack1, array $stack2) {
 		for($i = 0; $i < count($stack2); $i++) {
 			if(!isset($stack1[$i]) || $stack1[$i] != $stack2[$i]) {
 				return -1;
@@ -958,5 +970,13 @@ class Model_Generator {
 	 */
 	private function is_nullable($table, $col) {
 		return $this -> database -> table[$table] -> cols[$col] -> nullable;
+	}
+	
+	private static function keyDocumentation(SQL_Table $table, array $key) {
+		$info = array();
+		foreach($key as $f) {
+			$info[] = "@param " . self::primitive($table -> cols[$f]) . " $f " . $table -> cols[$f] -> comment;
+		}
+		return $info;
 	}
 }
