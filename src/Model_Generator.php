@@ -313,6 +313,24 @@ class Model_Generator {
 		$str .= "\t\treturn \$" . $entity -> query_table_name . ";\n";
 		$str .= "\t}\n";
 
+		/* Getters and setters */
+		foreach($entity -> table -> cols as $col) {
+			$str .= "\n" . $this -> block_comment("Get " . $col -> name . "\n\n@return " . $this -> primitive($col), 1);
+			$str .= "\tpublic function get" . self::titleCase($col -> name) . "() {\n";
+			$str .= "\t\tif(!isset(\$this -> model_variables_set['" . $col -> name . "'])) {\n";
+			$str .= "\t\t\tthrow new Exception(\"" . $entity -> table -> name . "." . $col -> name . " has not been initialised.\");\n";
+			$str .= "\t\t}\n";
+			$str .= "\t\treturn \$this -> " . $col -> name .";\n";
+			$str .= "\t}\n";
+			$str .= "\n" . $this -> block_comment("Set " . $col -> name . "\n\n@param " . $this -> primitive($col) . " \$" . $col -> name, 1);
+			$str .= "\t".(in_array($col -> name, $entity -> table -> pk) ? "private" : "public" ) . " function set" . self::titleCase($col -> name) . "($" . $col -> name . ") {\n";
+			$str .= $this -> validate_type($entity -> table , $col);
+			$str .= "\t\t\$this -> " . $col -> name ." = $" . $col -> name . ";\n";
+			$str .= "\t\t\$this -> model_variables_changed['" . $col -> name ."'] = true;\n";
+			$str .= "\t\t\$this -> model_variables_set['" . $col -> name ."'] = true;\n";
+			$str .= "\t}\n";
+		}
+		
 		// TODO
 		/* Finalise and output */
 		$str .= "}\n?>";
@@ -323,23 +341,6 @@ class Model_Generator {
 		unset($inc);
 		return;
 		
-		/* Getters and setters */
-		foreach($table -> cols as $col) {
-			$str .= "\n" . $this -> block_comment("Get " . $col -> name . "\n\n@return " . $this -> primitive($col), 1);
-			$str .= "\tpublic function get_" . $col -> name . "() {\n";
-			$str .= "\t\tif(!isset(\$this -> model_variables_set['" . $col -> name . "'])) {\n";
-			$str .= "\t\t\tthrow new Exception(\"" . $table -> name . "." . $col -> name . " has not been initialised.\");\n";
-			$str .= "\t\t}\n";
-			$str .= "\t\treturn \$this -> " . $col -> name .";\n";
-			$str .= "\t}\n";
-			$str .= "\n" . $this -> block_comment("Set " . $col -> name . "\n\n@param " . $this -> primitive($col) . " \$" . $col -> name, 1);
-			$str .= "\t".(in_array($col -> name, $table -> pk) ? "private" : "public" ) . " function set_" . $col -> name . "($" . $col -> name . ") {\n";
-			$str .= $this -> validate_type($table, $col);
-			$str .= "\t\t\$this -> " . $col -> name ." = $" . $col -> name . ";\n";
-			$str .= "\t\t\$this -> model_variables_changed['" . $col -> name ."'] = true;\n";
-			$str .= "\t\t\$this -> model_variables_set['" . $col -> name ."'] = true;\n";
-			$str .= "\t}\n";
-		}
 
 		/* Update */
 		$str .= "\n" . $this -> block_comment("Update " . $table -> name, 1);
