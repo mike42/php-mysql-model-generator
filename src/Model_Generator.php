@@ -341,7 +341,7 @@ class Model_Generator {
 		 	"\t\t\$fieldset = array();\n" .
 		 	"\t\t\$everything = \$this -> to_array();\n";
 		foreach($entity -> table -> pk as $fieldname) {
-			$str .= "\t\t\$data['$fieldname'] = \$this -> get".self::titleCase($fieldname).";\n";
+			$str .= "\t\t\$data['$fieldname'] = \$this -> get".self::titleCase($fieldname)."();\n";
 		}
 		$str .= "\t\tforeach(\$this -> model_variables_changed as \$col => \$changed) {\n" .
 		 	"\t\t\t\$fieldset[] = \"`\$col` = :\$col\";\n" .
@@ -383,12 +383,12 @@ class Model_Generator {
 		$str .= "\n" . $this -> block_comment("Delete " . $entity -> table -> name, 1);
 		$str .= "\tpublic function delete() {\n";
 		$str .= "\t\t\$sth = database::\$dbh -> prepare(\"DELETE FROM `".$entity -> table -> name . "` WHERE " . implode(" AND ", $pkfields). "\");\n";
-		foreach($table -> pk as $fieldname) {
-			$str .= "\t\t\$data['$fieldname'] = \$this -> get_$fieldname();\n";
+		foreach($entity -> table -> pk as $fieldname) {
+			$str .= "\t\t\$data['$fieldname'] = \$this -> get" . self::titleCase($fieldname). "();\n";
 		}
 		$str .= "\t\t\$sth -> execute(\$data);\n";
 		$str .= "\t}\n";
-
+		
 		/* Finalise and output */
 		$str .= "}\n?>";
 		$fn = $this -> base . "/lib/model/" . $entity -> table -> name . "_model.php";
