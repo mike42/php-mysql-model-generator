@@ -330,20 +330,9 @@ class Model_Generator {
 			$str .= "\t\t\$this -> model_variables_set['" . $col -> name ."'] = true;\n";
 			$str .= "\t}\n";
 		}
-		
-		// TODO
-		/* Finalise and output */
-		$str .= "}\n?>";
-		$fn = $this -> base . "/lib/model/" . $entity -> table -> name . "_model.php";
-		file_put_contents($fn, $str);
-		echo $str . "\n";
-		include($fn); // Very crude syntax check
-		unset($inc);
-		return;
-		
 
 		/* Update */
-		$str .= "\n" . $this -> block_comment("Update " . $table -> name, 1);
+		$str .= "\n" . $this -> block_comment("Update " . $entity -> table -> name, 1);
 		$str .= "\tpublic function update() {\n" .
 		 	"\t\tif(count(\$this -> model_variables_changed) == 0) {\n" .
 		 	"\t\t\tthrow new Exception(\"Nothing to update\");\n" .
@@ -351,8 +340,8 @@ class Model_Generator {
 		 	"\t\t/* Compose list of changed fields */\n" .
 		 	"\t\t\$fieldset = array();\n" .
 		 	"\t\t\$everything = \$this -> to_array();\n";
-		foreach($table -> pk as $fieldname) {
-			$str .= "\t\t\$data['$fieldname'] = \$this -> get_$fieldname();\n";
+		foreach($entity -> table -> pk as $fieldname) {
+			$str .= "\t\t\$data['$fieldname'] = \$this -> get".self::titleCase($fieldname).";\n";
 		}
 		$str .= "\t\tforeach(\$this -> model_variables_changed as \$col => \$changed) {\n" .
 		 	"\t\t\t\$fieldset[] = \"`\$col` = :\$col\";\n" .
@@ -360,12 +349,12 @@ class Model_Generator {
 		 	"\t\t}\n" .
 		 	"\t\t\$fields = implode(\", \", \$fieldset);\n\n" .
 		 	"\t\t/* Execute query */\n";
-		$str .= "\t\t\$sth = database::\$dbh -> prepare(\"UPDATE `".$table -> name . "` SET \$fields WHERE " . implode(" AND ", $pkfields). "\");\n";
+		$str .= "\t\t\$sth = Database::\$dbh -> prepare(\"UPDATE `".$entity -> table -> name . "` SET \$fields WHERE " . implode(" AND ", $pkfields). "\");\n";
 		$str .= "\t\t\$sth -> execute(\$data);\n";
 		$str .= "\t}\n";
-
+		
 		/* Insert */
-		$str .= "\n" . $this -> block_comment("Add new " . $table -> name, 1);
+		$str .= "\n" . $this -> block_comment("Add new " . $entity -> table -> name, 1);
 		$str .= "\tpublic function insert() {\n" .
 		 	"\t\tif(count(\$this -> model_variables_set) == 0) {\n" .
 		 	"\t\t\tthrow new Exception(\"No fields have been set!\");\n" .
@@ -382,12 +371,22 @@ class Model_Generator {
 		$str .= "\t\t\$fields = implode(\", \", \$fieldset);\n" .
 				"\t\t\$vals = implode(\", \", \$fieldset_colon);\n\n" .
 				"\t\t/* Execute query */\n" .
-				"\t\t\$sth = database::\$dbh -> prepare(\"INSERT INTO `".$table -> name . "` (\$fields) VALUES (\$vals);\");\n";
+				"\t\t\$sth = database::\$dbh -> prepare(\"INSERT INTO `".$entity -> table -> name . "` (\$fields) VALUES (\$vals);\");\n";
 		$str .= "\t\t\$sth -> execute(\$data);\n";
-		if(count($table -> pk) == 1) {
-			$str .= "\t\t\$this -> set_" . $table -> pk[0]. "(database::\$dbh->lastInsertId());\n";
+		if(count($entity -> table -> pk) == 1) {
+			// Auto-increment keys etc
+			$str .= "\t\t\$this -> set" . self::titleCase($entity -> table -> pk[0]). "(database::\$dbh->lastInsertId());\n";
 		}
 		$str .= "\t}\n";
+
+		/* Finalise and output */
+		$str .= "}\n?>";
+		$fn = $this -> base . "/lib/model/" . $entity -> table -> name . "_model.php";
+		file_put_contents($fn, $str);
+		echo $str . "\n";
+		include($fn); // Very crude syntax check
+		unset($inc);
+		return;
 
 		/* Delete */
 		$str .= "\n" . $this -> block_comment("Delete " . $table -> name, 1);
