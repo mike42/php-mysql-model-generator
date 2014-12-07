@@ -379,6 +379,16 @@ class Model_Generator {
 		}
 		$str .= "\t}\n";
 
+		/* Delete */
+		$str .= "\n" . $this -> block_comment("Delete " . $entity -> table -> name, 1);
+		$str .= "\tpublic function delete() {\n";
+		$str .= "\t\t\$sth = database::\$dbh -> prepare(\"DELETE FROM `".$entity -> table -> name . "` WHERE " . implode(" AND ", $pkfields). "\");\n";
+		foreach($table -> pk as $fieldname) {
+			$str .= "\t\t\$data['$fieldname'] = \$this -> get_$fieldname();\n";
+		}
+		$str .= "\t\t\$sth -> execute(\$data);\n";
+		$str .= "\t}\n";
+
 		/* Finalise and output */
 		$str .= "}\n?>";
 		$fn = $this -> base . "/lib/model/" . $entity -> table -> name . "_model.php";
@@ -387,17 +397,7 @@ class Model_Generator {
 		include($fn); // Very crude syntax check
 		unset($inc);
 		return;
-
-		/* Delete */
-		$str .= "\n" . $this -> block_comment("Delete " . $table -> name, 1);
-		$str .= "\tpublic function delete() {\n";
-		$str .= "\t\t\$sth = database::\$dbh -> prepare(\"DELETE FROM `".$table -> name . "` WHERE " . implode(" AND ", $pkfields). "\");\n";
-		foreach($table -> pk as $fieldname) {
-			$str .= "\t\t\$data['$fieldname'] = \$this -> get_$fieldname();\n";
-		}
-		$str .= "\t\t\$sth -> execute(\$data);\n";
-		$str .= "\t}\n";
-
+		
 		/* Populate child tables */
 		if(isset($this -> rev_constraints[$table -> name]) && count($this -> rev_constraints[$table -> name]) != 0) {
 			foreach($this -> rev_constraints[$table -> name] as $child => $fk) {
