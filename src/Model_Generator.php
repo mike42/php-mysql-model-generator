@@ -156,7 +156,7 @@ class Model_Generator {
 		$str .= "\t}\n";
 
 		/* Constructor */
-		$str .= "\n" . $this -> block_comment("Construct new " . $entity -> table -> name . " from field list\n\n@return array", 1);
+		$str .= "\n" . $this -> block_comment("Construct new " . $entity -> table -> name . " from an associative array.\n\n@param array \$fields The array to create this object from.", 1);
 		$str .= "\tpublic function __construct(array \$fields = array()) {\n";
 		if(count($entity -> table -> cols) != 0) {
 			$str .= "\t\t/* Initialise everything as blank to avoid tripping up the permissions fitlers */\n";
@@ -391,23 +391,28 @@ class Model_Generator {
 		
 		/* Populate child tables */
 		foreach($entity -> child as $child) {
-			$str .= "\n" . $this -> block_comment("Load related rows from " . $child -> dest -> table -> name  . " table\n\n" .
-					"@param int \$start Row to begin from. Default 0 (begin from start)\n" .
-					"@param int \$limit Maximum number of rows to retrieve. Default -1 (no limit)", 1);
-			$str .= "\tpublic function load".self::titleCase($child -> dest -> model_storage_name). "(\$start = 0, \$limit = -1) {\n";
-			for($i = 0; $i < count($child -> constraint -> child_fields); $i++) {
-				$str .= "\t\t\$".$child -> constraint -> child_fields[$i] . " = \$this -> get".self::titleCase($child -> constraint -> parent_fields[$i])."();\n";
-			}
-			
+			$joinFields = $this -> listFields($this -> database -> table[$child -> dest -> table -> name], $child -> constraint -> parent_fields, true);
 			$f = $child -> toOne ? "get" : "list";
-			$joinFields = implode(",", $this -> listFields($this -> database -> table[$child -> dest -> table -> name], $child -> constraint -> parent_fields, true));
-			$str .= "\t\t\$this -> " . $child -> dest -> model_storage_name ." = " . $child -> dest -> table -> name . "_Model::${f}By" . self::titleCase($child -> shortName) ."(". $joinFields .", \$start, \$limit);\n";
+			if(!$child -> toOne) {
+				$str .= "\n" . $this -> block_comment("Load " . $child -> dest -> model_storage_name ."[] array from the " . $child -> dest -> table -> name  . " table.\n\n" .
+						"@param int \$start Row to begin from. Default 0 (begin from start)\n" .
+						"@param int \$limit Maximum number of rows to retrieve. Default -1 (no limit)", 1);
+				$str .= "\tpublic function load".self::titleCase($child -> dest -> model_storage_name). "(\$start = 0, \$limit = -1) {\n";
+				$joinFields = array_merge($joinFields, array("\$start", "\$limit"));
+			} else {
+				$str .= "\n" . $this -> block_comment("Load " . $child -> dest -> model_storage_name ." from the " . $child -> dest -> table -> name  . " table.", 1);
+				$str .= "\tpublic function load".self::titleCase($child -> dest -> model_storage_name). "() {\n";
+			}
+			for($i = 0; $i < count($child -> constraint -> child_fields); $i++) {
+				$str .= "\t\t\$".$child -> constraint -> parent_fields[$i] . " = \$this -> get".self::titleCase($child -> constraint -> child_fields[$i])."();\n";
+			}
+			$str .= "\t\t\$this -> " . $child -> dest -> model_storage_name ." = " . $child -> dest -> table -> name . "_Model::${f}By" . self::titleCase($child -> shortName) ."(". implode(",", $joinFields) . ");\n";
 			$str .= "\t}\n";
 		}
 
 		/* Get by primary key */
 		$info = self::keyDocumentation($entity -> table, $entity -> table -> pk);
-		$str .= "\n" . $this -> block_comment("Retrieve by primary key\n\n" . implode("\n",$info), 1);
+		$str .= "\n" . $this -> block_comment("Retrieve " . $entity -> table -> name . " by " . implode(", ", $entity -> table -> pk) . "\n\n" . implode("\n",$info), 1);
 		$str .= "\tpublic static function get(";
 		$str .= implode(", ", $this -> listFields($entity -> table, $entity -> table -> pk, true));
 		$str .= ") {\n";
@@ -429,7 +434,7 @@ class Model_Generator {
 		
 		/* Finalise and output */
 		$str .= "}\n?>";
-		$fn = $this -> base . "/lib/model/" . $entity -> table -> name . "_model.php";
+		$fn = $this -> base . "/lib/model/" . $entity -> table -> name . "_Model.php";
 		file_put_contents($fn, $str);
 		echo $str . "\n";
 		include($fn); // Very crude syntax check
@@ -596,7 +601,7 @@ class Model_Generator {
 		$str .= "\t\t/* Insert new row */\n";
 		$str .= "\t\ttry {\n";
 		$str .= "\t\t\t\$" . $table -> name . " -> insert();\n";
-		$str .= "\t\t\treturn $" . $table -> name . " -> to_array_filtered(\$role);\n";
+		$str .= "\t\t\treturn $" . $table -> name . " -> toFilteredArray(\$role);\n";
 		$str .= "\t\t} catch(Exception \$e) {\n";
 		$str .= "\t\t\treturn array('error' => 'Failed to add to database', 'code' => '500');\n";
 		$str .= "\t\t}\n";
@@ -975,7 +980,7 @@ class Model_Generator {
 	private static function keyDocumentation(SQL_Table $table, array $key) {
 		$info = array();
 		foreach($key as $f) {
-			$info[] = "@param " . self::primitive($table -> cols[$f]) . " $f " . $table -> cols[$f] -> comment;
+			$info[] = "@param " . self::primitive($table -> cols[$f]) . " \$$f " . $table -> cols[$f] -> comment;
 		}
 		return $info;
 	}
