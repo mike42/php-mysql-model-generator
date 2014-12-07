@@ -389,6 +389,20 @@ class Model_Generator {
 		$str .= "\t\t\$sth -> execute(\$data);\n";
 		$str .= "\t}\n";
 		
+		/* Populate child tables */
+		foreach($entity -> child as $child) {
+			$str .= "\n" . $this -> block_comment("List related rows from " . $child -> dest -> table -> name  . " table\n\n" .
+					"@param int \$start Row to begin from. Default 0 (begin from start)\n" .
+					"@param int \$limit Maximum number of rows to retrieve. Default -1 (no limit)", 1);
+			$str .= "\tpublic function populate_list_".$child . "(\$start = 0, \$limit = -1) {\n";
+			for($i = 0; $i < count($fk -> child_fields); $i++) {
+				$str .= "\t\t\$".$fk -> child_fields[$i] . " = \$this -> get_".$fk -> parent_fields[$i]."();\n";
+			}
+			$str .= "\t\t\$this -> list_".$child." = ".$child . "_model::list_by_".$fk -> name ."(". implode(",", $this -> listFields($this -> database -> table[$child], $fk -> child_fields, true)) .", \$start, \$limit);\n";
+			$str .= "\t}\n";
+			die();
+		}
+		
 		/* Finalise and output */
 		$str .= "}\n?>";
 		$fn = $this -> base . "/lib/model/" . $entity -> table -> name . "_model.php";
@@ -398,7 +412,14 @@ class Model_Generator {
 		unset($inc);
 		return;
 		
-		/* Populate child tables */
+		if(count($entity -> child) > 0) {
+			print_r($entity -> child);
+			
+			
+			
+		}
+		
+		// TODO
 		if(isset($this -> rev_constraints[$table -> name]) && count($this -> rev_constraints[$table -> name]) != 0) {
 			foreach($this -> rev_constraints[$table -> name] as $child => $fk) {
 				$str .= "\n" . $this -> block_comment("List associated rows from " . $child . " table\n\n" .
@@ -412,6 +433,8 @@ class Model_Generator {
 				$str .= "\t}\n";
 			}
 		}
+		
+// ------------------------------------
 
 		/* Get by primary key */
 		$str .= "\n" . $this -> block_comment("Retrieve by primary key", 1);
