@@ -248,43 +248,72 @@ class Model_Generator {
 		/* From array('foo', 'bar', 'baz') to array('a.weeble' => 'foo', 'a.warble' => bar, 'b.beeble' => 'baz') */
 		$str .= "\n" . $this -> block_comment("Convert retrieved database row from numbered to named keys, including table name\n\n@param array \$row ror retrieved from database\n@return array row with indices", 1);
 		$str .= "\tprivate static function row_to_assoc(array \$row) {\n";
-		$str .= "\t\t\$" . $entity -> query_table_name . " = array();\n";
+		$cols = array();
+		foreach($data['fields'] as $num => $field) {
+			if(count($field['var']) == 0) {
+				$cols[] = "\t\t\t\"" . $field['col'] . "\" => \$row[$num]";
+			}
+		}
+		$str .= "\t\t\$" . $entity -> query_table_name . " = array(". (count($cols) > 0? "\n". implode(",\n", $cols) : "") . ");\n";
+		/* More complex tree-building of other fields */
 		$stack = array();
 		$stackVarname = array();
 		foreach($data['fields'] as $num => $field) {
-			//$cols[] = "\t\t\t\"$name\" => \$row[$num]";
 			if(count($field['var']) == 0) {
-				$str .= "\t\t\$" . $entity -> query_table_name . "['" . $field['col'] . "'] = \$row[$num];";
+				// Already done above
+				continue;
 			} else {
 				while(self::stack_compare($field['var'], $stack) == -1) {
-					$str .= "\t\t" . str_repeat("\t", count($stack)) . "// = \$".$stackVarname[count($stackVarname) - 1] ."\n";
+					// Current and previous variable names, to copy sub-objects
+					if(count($stackVarname) == 1) {
+						$to = $entity -> query_table_name;
+					} else {
+						$to = $stackVarname[count($stackVarname) - 2];
+					}
+					$from = $stackVarname[count($stackVarname) - 1];
+					$str .= "\t\t" . str_repeat("\t", count($stack)) . "\$${to}['" . $stack[count($stack) - 1] . "'] = \$${from};\n";
 					array_pop($stack);
 					array_pop($stackVarname);
 					$str .= "\t\t" . str_repeat("\t", count($stack)) . "}\n";
 				}
-				while(self::stack_compare($field['var'], $stack) == 1) {
-					// TODO find retrieved PK fields
-				//	$str .= " // " . $field['table_orig'];
-					$str .= "\t\t" . str_repeat("\t", count($stack)) . "if(true) {\n";
+				while(self::stack_compare($field['var'], $stack) == 1) {				
+					$i = $num;
+					// Check that all non-nullable fields are defined (should always be at least one, due to joins)
+					$criteria = array();
+					$cols = array();
+					while(isset($data['fields'][$i]) && $data['fields'][$i]['table'] == $field['table']) {
+						if(!$this -> is_nullable($field['table_orig'], $data['fields'][$i]['col'])) {
+							$criteria[] = "\$row[$i] !== NULL";
+						}
+						$cols[] = "\t\t\t\t" . str_repeat("\t", count($stack)) . "\"" . $data['fields'][$i]['col'] . "\" => \$row[$i]";
+						$i++;
+					}
+					$condition = count($criteria) == 0 ? "true" : implode(" && ", $criteria);
+					$str .= "\t\t" . str_repeat("\t", count($stack)) . "if($condition) {\n";
 					array_push($stack, $field['var'][count($stack)]);
 					array_push($stackVarname, $field['table']);
 					$varname = $field['table'];
+					$str .= "\t\t" . str_repeat("\t", count($stack)) . "\$" . $field['table'] . " = array(". (count($cols) > 0? "\n". implode(",\n", $cols) : "") . ");\n";
 				}
-				//$str .= "\t\t" . str_repeat("\t", count($stack)) . "\$values['".implode("']['", $field['var'])."']['" . $field['col'] . "'] = \$row[$num];";
-				$str .= "\t\t" . str_repeat("\t", count($stack)) . "\$" . $field['table'] . "['" . $field['col'] . "'] = \$row[$num];";
 			}
-			$str .= "\n";
 		}
 		while(self::stack_compare(array(), $stack) == -1) {
-			// TODO finalise here
+			// Repeat stack_compare() == -1 from above.
+			if(count($stackVarname) == 1) {
+				$to = $entity -> query_table_name;
+			} else {
+				$to = $stackVarname[count($stackVarname) - 2];
+			}
+			$from = $stackVarname[count($stackVarname) - 1];
+			$str .= "\t\t" . str_repeat("\t", count($stack)) . "\$${to}['" . $stack[count($stack) - 1] . "'] = \$${from};\n";
 			array_pop($stack);
+			array_pop($stackVarname);
 			$str .= "\t\t" . str_repeat("\t", count($stack)) . "}\n";
 		}
-	//	$str .= "\t\t\$values = array(". (count($cols) > 0? "\n". implode(",\n", $cols) : "") . ");\n";
-	
-		$str .= "\t\treturn \$values;\n";
+		$str .= "\t\treturn \$" . $entity -> query_table_name . ";\n";
 		$str .= "\t}\n";
-		
+
+		// TODO
 		/* Finalise and output */
 		$str .= "}\n?>";
 		$fn = $this -> base . "/lib/model/" . $entity -> table -> name . "_model.php";
@@ -292,11 +321,8 @@ class Model_Generator {
 		echo $str . "\n";
 		include($fn); // Very crude syntax check
 		unset($inc);
-		if($entity -> table -> name == "Person") {
-			die();
-		}
 		return;
-
+		
 		/* Getters and setters */
 		foreach($table -> cols as $col) {
 			$str .= "\n" . $this -> block_comment("Get " . $col -> name . "\n\n@return " . $this -> primitive($col), 1);
@@ -901,5 +927,13 @@ class Model_Generator {
 			return 1;
 		}
 		return 0;
+	}
+	
+	/**
+	 * @param string $table
+	 * @param string $col
+	 */
+	private function is_nullable($table, $col) {
+		return $this -> database -> table[$table] -> cols[$col] -> nullable;
 	}
 }

@@ -11,4 +11,3 @@ $import -> name = $argv[1];
 
 $mg = new Model_Generator($import);
 $mg -> generate();
-
