@@ -11,7 +11,7 @@ class SQL_Constraint {
 	public $parent_fields;
 	public $child_table; // Used when generating models
 	public $reversed;
-	
+
 	/**
 	 * Roughly parse constraints
 	 *

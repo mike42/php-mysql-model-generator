@@ -154,6 +154,7 @@ class Model_Generator {
 			}
 		}
 		$str .= "\t}\n";
+		unset($inc);
 
 		/* Constructor */
 		$str .= "\n" . $this -> block_comment("Construct new " . $entity -> table -> name . " from an associative array.\n\n@param array \$fields The array to create this object from.", 1);
@@ -223,7 +224,6 @@ class Model_Generator {
 				"\t\t}\n";
 		if(count($entity -> parent) != 0 || count($entity -> child) != 0) {
 			$str .= "\n\t\t/* Add filtered versions of everything that's been loaded */\n";
-			
 			foreach($entity -> parent as $parent) {
 				$str .= "\t\tif(\$this -> " . $parent -> dest -> model_storage_name . " !== null) {\n" .
 						"\t\t\t\$values['". $parent -> dest -> model_storage_name . "'] = \$this -> " . $parent -> dest -> model_storage_name . " -> to_array_filtered(\$role);\n" .
@@ -391,79 +391,148 @@ class Model_Generator {
 		
 		/* Populate child tables */
 		foreach($entity -> child as $child) {
+			$index = Model_Index::retrieveRelationshipIndex($entity -> index, $child);
 			$joinFields = $this -> listFields($this -> database -> table[$child -> dest -> table -> name], $child -> constraint -> parent_fields, true);
-			$f = $child -> toOne ? "get" : "list";
-			if(!$child -> toOne) {
-				$str .= "\n" . $this -> block_comment("Load " . $child -> dest -> model_storage_name ."[] array from the " . $child -> dest -> table -> name  . " table.\n\n" .
-						"@param int \$start Row to begin from. Default 0 (begin from start)\n" .
-						"@param int \$limit Maximum number of rows to retrieve. Default -1 (no limit)", 1);
+			
+			if(!$index -> isUnique) {
+				$info = self::keyDocumentation($entity -> table, array(), false);
+				$str .= "\n" . $this -> block_comment("Load " . $child -> dest -> model_storage_name ."[] array from the " . $child -> dest -> table -> name  . " table.\n\n" . implode("\n",$info), 1);
 				$str .= "\tpublic function load".self::titleCase($child -> dest -> model_storage_name). "(\$start = 0, \$limit = -1) {\n";
 				$joinFields = array_merge($joinFields, array("\$start", "\$limit"));
 			} else {
-				$str .= "\n" . $this -> block_comment("Load " . $child -> dest -> model_storage_name ." from the " . $child -> dest -> table -> name  . " table.", 1);
+				$str .= "\n" . $this -> block_comment("Load the related " . $child -> dest -> model_storage_name ." from the " . $child -> dest -> table -> name  . " table.", 1);
 				$str .= "\tpublic function load".self::titleCase($child -> dest -> model_storage_name). "() {\n";
 			}
 			for($i = 0; $i < count($child -> constraint -> child_fields); $i++) {
 				$str .= "\t\t\$".$child -> constraint -> parent_fields[$i] . " = \$this -> get".self::titleCase($child -> constraint -> child_fields[$i])."();\n";
 			}
-			$str .= "\t\t\$this -> " . $child -> dest -> model_storage_name ." = " . $child -> dest -> table -> name . "_Model::${f}By" . self::titleCase($child -> shortName) ."(". implode(",", $joinFields) . ");\n";
+			
+			
+			
+			
+			$str .= "\t\t\$this -> " . $child -> dest -> model_storage_name ." = " . $child -> dest -> table -> name . "_Model::" . $index -> getFunctionName() . "(". implode(",", $joinFields) . ");\n";
 			$str .= "\t}\n";
 		}
 
-		/* Get by primary key */
-		$info = self::keyDocumentation($entity -> table, $entity -> table -> pk);
-		$str .= "\n" . $this -> block_comment("Retrieve " . $entity -> table -> name . " by " . implode(", ", $entity -> table -> pk) . "\n\n" . implode("\n",$info), 1);
-		$str .= "\tpublic static function get(";
-		$str .= implode(", ", $this -> listFields($entity -> table, $entity -> table -> pk, true));
-		$str .= ") {\n";
-		$conditions = $arrEntry = array();
-		foreach($entity -> table -> pk as $field) {
-			$conditions[] = self::wrapField($entity -> table -> name, $field) ." = :$field";
-			$arrEntry[] = "'$field' => \$$field";
+		/* Get or list by key */
+		foreach($entity -> index as $index) {
+			$joinFields = $this -> listFields($entity -> table, $index -> fields, true);
+			$info = self::keyDocumentation($entity -> table, $index -> fields, !$index -> isUnique);
+			if(!$index -> isUnique) {
+				$str .= "\n" . $this -> block_comment("List " . $entity -> table -> name . " by " . implode(", ", $index -> fields) . "\n\n" . implode("\n",$info), 1);
+				$joinFields = array_merge($joinFields, array("\$start", "\$limit"));
+			} else {
+				$str .= "\n" . $this -> block_comment("Get " . $entity -> table -> name . " by " . implode(", ", $index -> fields) . "\n\n" . implode("\n",$info), 1);
+			}
+			$str .= "\tpublic static function " . $index -> getFunctionName() . "(";
+			$str .= implode(", ", $joinFields);
+			$str .= ") {\n";
+
+			$conditions = $arrEntry = array();
+			foreach($index -> fields as $field) {
+				$conditions[] = self::wrapField($entity -> table -> name, $field) ." = :$field";
+				$arrEntry[] = "'$field' => \$$field";
+			}
+			$sql = " WHERE " . implode(" AND ", $conditions);
+			if(!$index -> isUnique) {
+				// Querying for a list
+				$str .= "\t\t\$ls = \"\";\n" .
+						"\t\t\$start = (int)\$start;\n" .
+						"\t\t\$limit = (int)\$limit;\n" .
+						"\t\tif(\$start >= 0 && \$limit > 0) {\n" .
+						"\t\t\t\$ls = \" LIMIT \$start, \$limit\";\n" .
+						"\t\t}\n";
+				$str .= "\t\t\$sth = Database::\$dbh -> prepare(self::SELECT_QUERY . \"$sql\" . self::SORT_CLAUSE . \$ls . \";\");\n";
+				$str .= "\t\t\$sth -> execute();\n";
+				$str .= "\t\t\$rows = \$sth -> fetchAll(PDO::FETCH_NUM);\n" .
+						"\t\t\$ret = array();\n" .
+						"\t\tforeach(\$rows as \$row) {\n" .
+						"\t\t\t\$assoc = self::row_to_assoc(\$row);\n" .
+						"\t\t\t\$ret[] = new " . $entity -> table -> name . "_Model(\$assoc);\n" .
+						"\t\t}\n";
+			} else {
+				// Querying for a single item
+				$str .= "\t\t\$sth = Database::\$dbh -> prepare(self::SELECT_QUERY . \"$sql;\");\n";
+				$str .= "\t\t\$sth -> execute(array(" . implode(", ", $arrEntry) . "));\n";
+				$str .= "\t\t\$row = \$sth -> fetch(PDO::FETCH_NUM);\n";
+				$str .= "\t\tif(\$row === false){\n";
+				$str .= "\t\t\treturn false;\n";
+				$str .= "\t\t}\n";
+				$str .= "\t\t\$assoc = self::row_to_assoc(\$row);\n";
+				$str .= "\t\treturn new " . $entity -> table -> name . "_Model(\$assoc);\n";
+			}
+			$str .= "\t}\n";
 		}
-		$sql = "WHERE " . implode(" AND ", $conditions);
-		$str .= "\t\t\$sth = Database::\$dbh -> prepare(self::SELECT_QUERY . \"$sql;\");\n";
-		$str .= "\t\t\$sth -> execute(array(" . implode(", ", $arrEntry) . "));\n";
-		$str .= "\t\t\$row = \$sth -> fetch(PDO::FETCH_NUM);\n";
-		$str .= "\t\tif(\$row === false){\n";
-		$str .= "\t\t\treturn false;\n";
-		$str .= "\t\t}\n";
-		$str .= "\t\t\$assoc = self::row_to_assoc(\$row);\n";
-		$str .= "\t\treturn new " . $entity -> table -> name . "_Model(\$assoc);\n";
-		$str .= "\t}\n";
+
+		//if(count($entity -> table -> index) > 0) {
+		//	echo $str;
+		//	print_r($entity -> index);
+		//	die();
+		//}
+
+// 		/* Get by primary key */
+// 		$info = self::keyDocumentation($entity -> table, $entity -> table -> pk);
+// 		$str .= "\n" . $this -> block_comment("Retrieve " . $entity -> table -> name . " by " . implode(", ", $entity -> table -> pk) . "\n\n" . implode("\n",$info), 1);
+// 		$str .= "\tpublic static function get(";
+// 		$str .= implode(", ", $this -> listFields($entity -> table, $entity -> table -> pk, true));
+// 		$str .= ") {\n";
+// 		$conditions = $arrEntry = array();
+// 		foreach($entity -> table -> pk as $field) {
+// 			$conditions[] = self::wrapField($entity -> table -> name, $field) ." = :$field";
+// 			$arrEntry[] = "'$field' => \$$field";
+// 		}
+// 		$sql = "WHERE " . implode(" AND ", $conditions);
+// 		$str .= "\t\t\$sth = Database::\$dbh -> prepare(self::SELECT_QUERY . \"$sql;\");\n";
+// 		$str .= "\t\t\$sth -> execute(array(" . implode(", ", $arrEntry) . "));\n";
+// 		$str .= "\t\t\$row = \$sth -> fetch(PDO::FETCH_NUM);\n";
+// 		$str .= "\t\tif(\$row === false){\n";
+// 		$str .= "\t\t\treturn false;\n";
+// 		$str .= "\t\t}\n";
+// 		$str .= "\t\t\$assoc = self::row_to_assoc(\$row);\n";
+// 		$str .= "\t\treturn new " . $entity -> table -> name . "_Model(\$assoc);\n";
+// 		$str .= "\t}\n";
+
+		/* Get by unique indices */
+		//if(count($entity -> table -> unique) > 0) {
+		//	print_r($entity);
+			//print_r($entity -> table -> unique);
+		//	die();
+		//}
 		
+
+// 		foreach($table -> unique as $unique) {
+// 			$str .= "\n" . $this -> block_comment("Retrieve by " . $unique -> name, 1);
+// 			$str .= "\tpublic static function get_by_".$unique -> name."(";
+// 			$str .= implode(", ", $this -> listFields($table, $unique -> fields, true));
+// 			$str .= ") {\n";
+// 			$conditions = $arrEntry = array();
+// 			foreach($unique -> fields as $field) {
+// 				$conditions[] = "`" . $table -> name . "`.`" . $field . "` = :$field";
+// 				$arrEntry[] = "'$field' => \$$field";
+// 			}
+// 			/* Similar to get() above */
+// 			$sql = "SELECT " . implode(", ", $join['fields']) . " FROM " . $table -> name . " " . $join['clause'] . " WHERE " . implode(" AND ", $conditions);
+// 			$str .= "\t\t\$sth = database::\$dbh -> prepare(\"$sql;\");\n";
+// 			$str .= "\t\t\$sth -> execute(array(" . implode(", ", $arrEntry) . "));\n";
+// 			$str .= "\t\t\$row = \$sth -> fetch(PDO::FETCH_NUM);\n";
+// 			$str .= "\t\tif(\$row === false){\n";
+// 			$str .= "\t\t\treturn false;\n";
+// 			$str .= "\t\t}\n";
+// 			$str .= "\t\t\$assoc = self::row_to_assoc(\$row);\n";
+// 			$str .= "\t\treturn new " . $table -> name . "_Model(\$assoc);\n";
+// 			$str .= "\t}\n";
+// 		}
+
 		/* Finalise and output */
 		$str .= "}\n?>";
 		$fn = $this -> base . "/lib/model/" . $entity -> table -> name . "_Model.php";
 		file_put_contents($fn, $str);
 		echo $str . "\n";
 		include($fn); // Very crude syntax check
-		unset($inc); // Why is this here? TODO
+		if($entity -> table -> name == "Person") {
+			die();
+		}		
 		return;
-
-		/* Get by unique indices */
-		foreach($table -> unique as $unique) {
-			$str .= "\n" . $this -> block_comment("Retrieve by " . $unique -> name, 1);
-			$str .= "\tpublic static function get_by_".$unique -> name."(";
-			$str .= implode(", ", $this -> listFields($table, $unique -> fields, true));
-			$str .= ") {\n";
-			$conditions = $arrEntry = array();
-			foreach($unique -> fields as $field) {
-				$conditions[] = "`" . $table -> name . "`.`" . $field . "` = :$field";
-				$arrEntry[] = "'$field' => \$$field";
-			}
-			/* Similar to get() above */
-			$sql = "SELECT " . implode(", ", $join['fields']) . " FROM " . $table -> name . " " . $join['clause'] . " WHERE " . implode(" AND ", $conditions);
-			$str .= "\t\t\$sth = database::\$dbh -> prepare(\"$sql;\");\n";
-			$str .= "\t\t\$sth -> execute(array(" . implode(", ", $arrEntry) . "));\n";
-			$str .= "\t\t\$row = \$sth -> fetch(PDO::FETCH_NUM);\n";
-			$str .= "\t\tif(\$row === false){\n";
-			$str .= "\t\t\treturn false;\n";
-			$str .= "\t\t}\n";
-			$str .= "\t\t\$assoc = self::row_to_assoc(\$row);\n";
-			$str .= "\t\treturn new " . $table -> name . "_model(\$assoc);\n";
-			$str .= "\t}\n";
-		}
 
 		/* List with no particular criteria */
 		$str .= "\n" . $this -> block_comment("List all rows\n\n" .
@@ -908,7 +977,7 @@ class Model_Generator {
 			$joins[] = "LEFT JOIN " . self::wrapTable($join['table'], $join['as']) . " ON " . implode(" AND ", $on);
 		}
 		
-		$query = "SELECT " . implode(", ", $fields) . " FROM " . implode(" ", $joins) . " ";
+		$query = "SELECT " . implode(", ", $fields) . " FROM " . implode(" ", $joins);
 		return $query;
 	}
 	
@@ -943,7 +1012,7 @@ class Model_Generator {
 	 * @param string $in
 	 * @return string
 	 */
-	private static function titleCase($in) {
+	public static function titleCase($in) {
 		if(strlen($in) == 0) {
 			return $in;
 		}
@@ -977,10 +1046,14 @@ class Model_Generator {
 		return $this -> database -> table[$table] -> cols[$col] -> nullable;
 	}
 	
-	private static function keyDocumentation(SQL_Table $table, array $key) {
+	private static function keyDocumentation(SQL_Table $table, array $key, $extra = false) {
 		$info = array();
 		foreach($key as $f) {
 			$info[] = "@param " . self::primitive($table -> cols[$f]) . " \$$f " . $table -> cols[$f] -> comment;
+		}
+		if($extra) {
+			$info[] = "@param int \$start Row to begin from. Default 0 (begin from start)";
+			$info[] = "@param int \$limit Maximum number of rows to retrieve. Default -1 (no limit)";
 		}
 		return $info;
 	}

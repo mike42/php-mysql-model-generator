@@ -6,7 +6,7 @@ class SQL_Index {
 	/**
 	 * Construct an index from the SQL tokens of the INDEX spec.
 	 *
-	 * @param SQK_Token[] $tokens
+	 * @param SQL_Token[] $tokens
 	 * @throws Exception
 	 */
 	public function __construct($tokens) {

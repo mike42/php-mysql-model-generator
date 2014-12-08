@@ -1,13 +1,15 @@
 <?php
 require_once(dirname(__FILE__) . "/Model_Relationship.php");
+require_once(dirname(__FILE__) . "/Model_Index.php");
 
 /**
  * Form a tree from this (parent) table for greedy fetching
  */
 class Model_Entity {
-	public $child;
-	public $parent;
-	public $table;
+	public $child; // Array of Model_Relationship objects
+	public $parent; // Array of Model_Relationship objects
+	public $table; // SQL_Table
+	public $index; // Array of Model_Index objects
 
 	public $query_table_name; // For "SELECT Foo As Foo2". Unique in tree
 	public $model_storage_name; // Unique among siblings only
@@ -21,6 +23,7 @@ class Model_Entity {
 		/* Basic setup */
 		$this -> child = $this -> parent = array();
 		$this -> table = $table;
+		$this -> index = array();
 
 		if(array_search($table -> name, $children) !== false) {
 			/* Only recurse if this item has not yet appeared in the tree */
@@ -105,6 +108,21 @@ class Model_Entity {
 			foreach($current -> parent as $p) {
 				$queue[] = $p -> dest;
 			}
+		}
+
+		/* Queue up all the indexes to make a list */
+		$this -> index = Model_Index::addIndex($this -> index, new Model_Index($current -> table -> pk, null, true));
+		foreach($this -> parent as $parent) {
+			$new = Model_Index::fromModel_Relationship($parent);
+			$this -> index = Model_Index::addIndex($this -> index, $new);
+		}
+		foreach($this -> table -> unique as $unique) {
+			$new = Model_Index::fromSQL_Unique($unique);
+			$this -> index = Model_Index::addIndex($this -> index, $new);
+		}
+		foreach($this -> table -> index as $index) {
+			$new = Model_Index::fromSQL_Index($index);
+			$this -> index = Model_Index::addIndex($this -> index, $new);
 		}
 	}
 
@@ -215,95 +233,4 @@ class Model_Entity {
 		}
 		return $ret;
 	}
-
-	/**
-	 * Find the name of an index matching the field list given
-	 *
-	 * @param SQL_Table $table
-	 * @param array $child_fields
-	 * @return boolean
-	 */
-	private static function find_index(SQL_Table $table, array $child_fields) {
-		// TODO find all uses of this function and remove them
-		foreach($table -> index as $index) {
-			if(self::field_match($index -> fields, $child_fields)) {
-				return $index -> name;
-			}
-		}
-		return false;
-	}
-
-	/**
-	 * Check if two lists of fields are equal
-	 *
-	 * @param array $f1
-	 * @param array $f2
-	 * @return boolean
-	 */
-	public static function field_match(array $f1, array $f2) {
-		sort($f1);
-		sort($f2);
-		if(count(!$f1) != count($f2)) {
-			return false;
-		}
-		for($i = 0; $i < count($f1); $i++) {
-			if(!isset($f1[$i]) || !isset($f2[$i]) || $f1[$i] != $f2[$i]) {
-				return false;
-			}
-		}
-		return true;
-	}
-
-	/// ...
-
-
-	// 	private function getJoin($fromTableName) {
-	// 		return $this -> getRelated(array($fromTableName));
-
-
-
-
-	// 		return;
-	// 		/* Breadth-first search for parent tables */
-	// 		$allfields = $allfields_notick = array();
-	// 		$queue = array();
-	// 		$ret = array();
-	// 		$visited = array($fromTableName);
-	// 		foreach($this -> database -> table[$fromTableName] -> cols as $col) {
-	// 			$allfields[] = "`" . $fromTableName . "`.`" . $col -> name . "`";
-	// 			$allfields_notick[] = $fromTableName . "." . $col -> name;
-	// 		}
-
-
-	// 		while(count($queue) != 0) {
-	// 			$constraint = array_shift($queue);
-	// 			if(array_search($constraint -> parent_table, $visited) === false) {
-	// 				$visited[] = $constraint -> parent_table;
-
-	// 				$condition = array();
-	// 				foreach($constraint -> child_fields as $num => $field) {
-	// 					$condition[] = "`" . $constraint -> child_table . "`.`" . $field . "` = `" . $constraint -> parent_table . "`.`" . $constraint -> parent_fields[$num] . "`";
-	// 				}
-	// 				$ret[] = "JOIN `" . $constraint -> parent_table . "` ON " . implode(" AND ", $condition);
-	// 				foreach($this -> database -> table[$constraint -> parent_table] -> cols as $col) {
-	// 					$allfields[] = "`".$constraint -> parent_table . "`.`".$col -> name ."`";
-	// 					$allfields_notick[] = $constraint -> parent_table . ".".$col -> name;
-	// 				}
-	// 				foreach($this -> database -> table[$constraint -> parent_table] -> constraints as $sub_constraint) {
-	// 					$sub_constraint -> child_table = $constraint -> parent_table;
-	// 					$queue[] = $sub_constraint;
-	// 				}
-	// 			}
-	// 		}
-	// 		return array('clause' => implode(" ", $ret), 'fields' => $allfields, 'fields-notick' => $allfields_notick);
-	// 	}
-
-	// 	private function getRelated(array $parent_tables) {
-	// 		$queue = array();
-	// 		$fromTableName = $parent_tables[count($parent_tables) - 1];
-	// 		foreach($this -> database -> table[$fromTableName] -> constraints as $constraint) {
-
-	// 		}
-	// 		return array();
-	// 	}
 }

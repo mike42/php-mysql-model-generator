@@ -2,10 +2,10 @@
 class Model_Relationship {
 	public $dest;
 	public $constraint;
-	
+
 	public $nullable;
 	public $shortName;
-	
+
 	public $toOne;
 
 	public function __construct(SQL_Constraint $foreignKey, SQL_Database $database, array $children = array()) {
@@ -19,7 +19,7 @@ class Model_Relationship {
 		if($foreignKey -> reversed) {
 			$this -> nullable = true;
 			$this -> toOne = false;
-			;
+
 			/* Check if the foreign key comprises a single, unique field */
 			if(count($foreignKey -> parent_fields) == 1) {
 				$field = $foreignKey -> parent_fields[0];
@@ -45,11 +45,11 @@ class Model_Relationship {
 			}
 		}
 	}
-	
-	private static function filterName($name, $child) {
+
+	public static function filterName($name, $child) {
 		/* Re-name relationship  */
 		$pref = array("fk_", $child . "_");
-		$suf = array("_idx");
+		$suf = array("_idx", "_UNIQUE");
 		
 		foreach($pref as $p) {
 			if(substr($name, 0, strlen($p)) == $p) {
