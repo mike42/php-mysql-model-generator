@@ -520,6 +520,8 @@ return;
 }
 
 private function make_controller(Model_Entity $entity) {
+	echo $entity -> table -> comment;
+	
 	return;
 
 	// TODO
