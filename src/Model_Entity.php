@@ -111,7 +111,7 @@ class Model_Entity {
 		}
 
 		/* Queue up all the indexes to make a list */
-		$this -> index = Model_Index::addIndex($this -> index, new Model_Index($current -> table -> pk, null, true));
+		$this -> index = Model_Index::addIndex($this -> index, new Model_Index($this -> table -> pk, null, true));
 		foreach($this -> parent as $parent) {
 			$new = Model_Index::fromModel_Relationship($parent);
 			$this -> index = Model_Index::addIndex($this -> index, $new);
