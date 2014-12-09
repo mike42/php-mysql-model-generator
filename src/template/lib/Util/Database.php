@@ -1,10 +1,10 @@
 <?php
-class database {
+class Database {
 	public static $dbh;
 	private static $config;
 
 	public static function init() {
-		self::$config = core::getConfig('database');
+		self::$config = Core::getConfig('Database');
 		$user = self::$config['user'];
 		$pass = self::$config['pass'];
 		$host = self::$config['host'];

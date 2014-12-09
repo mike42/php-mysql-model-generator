@@ -1,5 +1,5 @@
 <?php
-class session {
+class Session {
 	/**
 	 * Open the session
 	 */

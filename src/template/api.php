@@ -1,26 +1,26 @@
 <?php
-require_once(dirname(__FILE__)."/lib/core.php");
-core::loadClass("database");
+require_once(dirname(__FILE__)."/lib/Core.php");
+Core::loadClass("Database");
 
 /* Set up some basic web things */
-$config['host']						= isset($_SERVER['HTTP_HOST'])? $_SERVER['HTTP_HOST'] : 'localhost';
-$config['webroot']					= isset($_SERVER['HTTP_HOST'])? 'http://'.$_SERVER['HTTP_HOST'].'/' : '';
-$config['default']['controller']	= 'Page';
+$config['host']                  = isset($_SERVER['HTTP_HOST'])? $_SERVER['HTTP_HOST'] : 'localhost';
+$config['webroot']               = isset($_SERVER['HTTP_HOST'])? 'http://'.$_SERVER['HTTP_HOST'].'/' : '';
+$config['default']['controller'] = 'Page';
 
 /* Map HTTP reuest types to methods */
 switch($_SERVER['REQUEST_METHOD']) {
 	case 'GET':
-		$config['default']['action']		= 'read';
+		$config['default']['action'] = 'read';
 		break;
 	case 'POST':
-		$config['default']['action']		= 'create';
+		$config['default']['action'] = 'create';
 		break;
 	case 'PUT':
-		$config['default']['action']		= 'update';
+		$config['default']['action'] = 'update';
 		break;
 	case 'DELETE':
-		$config['default']['action']		= 'delete';
-		break;	
+		$config['default']['action'] = 'delete';
+		break;
 }
 $config['default']['arg']		= array('home');
 $config['default']['format']		= 'html';

@@ -1,5 +1,5 @@
 <?php
-class session_controller {
+class Session_Controller {
 	public static function init() {
 		core::loadClass("session");
 	}

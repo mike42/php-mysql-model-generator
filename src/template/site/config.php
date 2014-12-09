@@ -1,7 +1,7 @@
 <?php
 
 /* Database connection options */
-$config['database']['user'] = "";
-$config['database']['pass'] = "";
-$config['database']['host'] = "localhost";
-$config['database']['db'] = "";
+$config['Database']['user'] = "";
+$config['Database']['pass'] = "";
+$config['Database']['host'] = "localhost";
+$config['Database']['db'] = "";
