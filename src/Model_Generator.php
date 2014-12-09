@@ -59,6 +59,15 @@ class Model_Generator {
 			$str .= implode(",\n", $foo) . ");\n";
 		}
 		file_put_contents($this -> base . "/site/permissions.php", $str);
+		
+		/* Rename documentation */
+		$replace = "/PROJECT_NAME           = \"\"/c\PROJECT_NAME           = \"". $this -> database -> name ."\"";
+		$file = $this -> base . "/doc/doxy.conf";
+		$cmd = sprintf("sed -i %s %s",
+				escapeshellarg($replace),
+				escapeshellarg($file)
+		);
+		system($cmd);
 	}
 
 	private function make_graphviz_doc(Model_Entity $entity) {
@@ -66,11 +75,6 @@ class Model_Generator {
 		$dot .= ".dot";
 		$pdf .= ".pdf";
 		file_put_contents($dot, $entity -> toGraphVizDotFile());
-		$cmd = sprintf("dot -Tpdf %s > %s",
-				escapeshellarg($dot),
-				escapeshellarg($pdf)
-		);
-		system($cmd);
 	}
 
 	private function make_model(Model_Entity $entity) {
