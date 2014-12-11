@@ -604,7 +604,7 @@ class Model_Generator {
  		$str .= "\tpublic static function update(" . implode(",", $pkfields_defaults) . ") {\n";
  		$str .= "\t\t/* Check permission */\n";
  		$str .= "\t\t\$role = session::getRole();\n";
- 		$str .= "\t\tif(!isset(Core::\$permission[\$role]['" . $entity -> table -> name . "']['update']) || count(Core::\$permission[\$role]['" . $table -> name . "']['update']) == 0) {\n";
+ 		$str .= "\t\tif(!isset(Core::\$permission[\$role]['" . $entity -> table -> name . "']['update']) || count(Core::\$permission[\$role]['" . $entity -> table -> name . "']['update']) == 0) {\n";
  		$str .= "\t\t\treturn array('error' => 'You do not have permission to do that', 'code' => '403');\n";
  		$str .= "\t\t}\n\n";
  		$str .= "\t\t/* Load ". $entity -> table -> name . " */\n";
@@ -632,24 +632,16 @@ class Model_Generator {
  		$str .= "\t\t\treturn array('error' => 'Failed to update row', 'code' => '500');\n";
  		$str .= "\t\t}\n";
  		$str .=	"\t}\n\n";
-	
-		/* End file */
-		$str .= "}\n?>";
-		
-		file_put_contents($this -> base . "/lib/Controller/" . $entity -> table -> name . "_Controller.php", $str);
-		echo $str;
-		include($this -> base . "/lib/Controller/" . $entity -> table -> name . "_Controller.php");
-		return;
 		
  		// Delete
-// 		$str .= "\tpublic static function delete(" . implode(",", $pkfields_defaults) . ") {\n";
-// 		$str .= "\t\t/* Check permission */\n";
-// 		$str .= "\t\t\$role = session::getRole();\n";
-// 		$str .= "\t\tif(!isset(Core::\$permission[\$role]['" . $table -> name . "']['delete']) || Core::\$permission[\$role]['" . $table -> name . "']['delete'] != true) {\n";
-// 		$str .= "\t\t\treturn array('error' => 'You do not have permission to do that', 'code' => '403');\n";
-// 		$str .= "\t\t}\n\n";
+ 		$str .= "\tpublic static function delete(" . implode(",", $pkfields_defaults) . ") {\n";
+ 		$str .= "\t\t/* Check permission */\n";
+ 		$str .= "\t\t\$role = session::getRole();\n";
+ 		$str .= "\t\tif(!isset(Core::\$permission[\$role]['" . $entity -> table -> name . "']['delete']) || Core::\$permission[\$role]['" . $entity -> table -> name . "']['delete'] != true) {\n";
+ 		$str .= "\t\t\treturn array('error' => 'You do not have permission to do that', 'code' => '403');\n";
+ 		$str .= "\t\t}\n\n";
 	
-// 		$str .= "\t\t/* Load ". $table -> name . " */\n";
+ 		$str .= "\t\t/* Load ". $entity -> table -> name . " */\n";
 // 		$str .= "\t\t\$". $table -> name . " = " . $table -> name . "_Model::get(" . implode(",", $pkfields) . ");\n";
 // 		$str .= "\t\tif(!\$".$table -> name . ") {\n";
 // 		$str .= "\t\t\treturn array('error' => '" . $table -> name . " not found', 'code' => '404');\n";
@@ -671,8 +663,16 @@ class Model_Generator {
 // 		$str .= "\t\t} catch(Exception \$e) {\n";
 // 		$str .= "\t\t\treturn array('error' => 'Failed to delete', 'code' => '500');\n";
 // 		$str .= "\t\t}\n";
-// 		$str .=	"\t}\n";
-// 		$str .= "\n";
+ 		$str .=	"\t}\n";
+ 		$str .= "\n";
+ 		
+ 		/* End file */
+ 		$str .= "}\n?>";
+ 		
+ 		file_put_contents($this -> base . "/lib/Controller/" . $entity -> table -> name . "_Controller.php", $str);
+ 		echo $str;
+ 		include($this -> base . "/lib/Controller/" . $entity -> table -> name . "_Controller.php");
+ 		return;
 	
  		// List all
 // 		$str .= "\tpublic static function list_all(\$page = 1, \$itemspp = 20) {\n";
