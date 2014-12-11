@@ -220,7 +220,7 @@ class Model_Generator {
 		$str .= "\n" . self::blockComment("Convert " . $entity -> table -> name . " to associative array, including only visible fields,\n" .
 				"parent tables, and loaded child tables\n\n" .
 				"@param string \$role The user role to use", 1);
-		$str .= "\tpublic function to_array_filtered(\$role = \"anon\") {\n" .
+		$str .= "\tpublic function toFilteredArray(\$role = \"anon\") {\n" .
 				"\t\tif(Core::\$permission[\$role]['" . $entity -> table -> name ."']['read'] === false) {\n" .
 				"\t\t\treturn false;\n" .
 				"\t\t}\n" .
@@ -236,18 +236,18 @@ class Model_Generator {
 			$str .= "\n\t\t/* Add filtered versions of everything that's been loaded */\n";
 			foreach($entity -> parent as $parent) {
 				$str .= "\t\tif(\$this -> " . $parent -> dest -> model_storage_name . " !== null) {\n" .
-						"\t\t\t\$values['". $parent -> dest -> model_storage_name . "'] = \$this -> " . $parent -> dest -> model_storage_name . " -> to_array_filtered(\$role);\n" .
+						"\t\t\t\$values['". $parent -> dest -> model_storage_name . "'] = \$this -> " . $parent -> dest -> model_storage_name . " -> toFilteredArray(\$role);\n" .
 						"\t\t}\n";
 			}
 			foreach($entity -> child as $child) {
 				if($child -> toOne) {
 					$str .= "\t\tif(\$this -> " . $child -> dest -> model_storage_name . " !== null) {\n" .
-							"\t\t\t\$values['". $child -> dest -> model_storage_name . "'] = \$this -> " . $parent -> dest -> model_storage_name . " -> to_array_filtered(\$role);\n" .
+							"\t\t\t\$values['". $child -> dest -> model_storage_name . "'] = \$this -> " . $parent -> dest -> model_storage_name . " -> toFilteredArray(\$role);\n" .
 							"\t\t}\n";
 				} else {
 					$str .= "\t\t\$values['". $child -> dest -> model_storage_name . "'] = array();\n";
 					$str .= "\t\tforeach(\$this -> ". $child -> dest -> model_storage_name . " as \$" . strtolower($child -> dest -> model_storage_name) . ") {\n";
-					$str .= "\t\t\t\$values['". $child -> dest -> model_storage_name . "'][] = \$" . strtolower($child -> dest -> model_storage_name) . " -> to_array_filtered(\$role);\n";
+					$str .= "\t\t\t\$values['". $child -> dest -> model_storage_name . "'][] = \$" . strtolower($child -> dest -> model_storage_name) . " -> toFilteredArray(\$role);\n";
 					$str .= "\t\t}\n";
 				}
 			}
@@ -569,143 +569,141 @@ class Model_Generator {
 		$str .= "\t\t\t\t\$init[\"" . $entity -> table -> name . ".\$field\"] = \$received[\$field];\n";
 		$str .=	"\t\t\t}\n";
 		$str .= "\t\t}\n";
-		$str .= "\t\t\$" . $entity -> table -> name . " = new " . $entity -> table -> name . "_Model(\$init);\n\n";
+		$str .= "\t\t\$" . $entity -> model_storage_name . " = new " . $entity -> table -> name . "_Model(\$init);\n\n";
 		$str .= $this -> check_foreign_keys($entity);
 		
+		
+		$str .= "\t\t/* Insert new row */\n";
+		$str .= "\t\ttry {\n";
+		$str .= "\t\t\t\$" . $entity -> model_storage_name . " -> insert();\n";
+		$str .= "\t\t\treturn $" . $entity -> table -> name . " -> toFilteredArray(\$role);\n";
+		$str .= "\t\t} catch(Exception \$e) {\n";
+		$str .= "\t\t\treturn array('error' => 'Failed to add to database', 'code' => '500');\n";
+		$str .= "\t\t}\n";
+		$str .=	"\t}\n\n";
+		
+		// Read
+		$str .= "\tpublic static function read(" . implode(",", $pkfields_defaults) . ") {\n";
+		$str .= "\t\t/* Check permission */\n";
+		$str .= "\t\t\$role = session::getRole();\n";
+		$str .= "\t\tif(!isset(Core::\$permission[\$role]['" . $entity -> table -> name . "']['read']) || count(Core::\$permission[\$role]['" . $entity -> table -> name . "']['read']) == 0) {\n";
+		$str .= "\t\t\treturn array('error' => 'You do not have permission to do that', 'code' => '403');\n";
+		$str .= "\t\t}\n\n";
+		$str .= "\t\t/* Load ". $entity -> table -> name . " */\n";
+		$str .= "\t\t\$". $entity -> model_storage_name . " = " . $entity -> table -> name . "_Model::get(" . implode(",", $pkfields) . ");\n";
+		$str .= "\t\tif(!\$".$entity -> model_storage_name . ") {\n";
+		$str .= "\t\t\treturn array('error' => '" . $entity -> table -> name . " not found', 'code' => '404');\n";
+		$str .= "\t\t}\n";
+		foreach($entity -> child as $child) {
+			$str .= "\t\t// \$" . $entity -> model_storage_name . " -> load" . self::titleCase($child -> dest -> model_storage_name) . "();\n";
+		}
+		$str .= "\t\treturn $" . $entity -> model_storage_name . " -> toFilteredArray(\$role);\n";
+		$str .=	"\t}\n\n";
+	
+ 		// Update
+ 		$str .= "\tpublic static function update(" . implode(",", $pkfields_defaults) . ") {\n";
+ 		$str .= "\t\t/* Check permission */\n";
+ 		$str .= "\t\t\$role = session::getRole();\n";
+ 		$str .= "\t\tif(!isset(Core::\$permission[\$role]['" . $entity -> table -> name . "']['update']) || count(Core::\$permission[\$role]['" . $table -> name . "']['update']) == 0) {\n";
+ 		$str .= "\t\t\treturn array('error' => 'You do not have permission to do that', 'code' => '403');\n";
+ 		$str .= "\t\t}\n\n";
+ 		$str .= "\t\t/* Load ". $entity -> table -> name . " */\n";
+ 		$str .= "\t\t\$". $entity -> model_storage_name . " = " . $entity -> table -> name . "_Model::get(" . implode(",", $pkfields) . ");\n";
+ 		$str .= "\t\tif(!\$".$entity -> model_storage_name . ") {\n";
+ 		$str .= "\t\t\treturn array('error' => '" . $entity -> table -> name . " not found', 'code' => '404');\n";
+ 		$str .= "\t\t}\n\n";
+ 		$str .= "\t\t/* Find fields to update */\n";
+ 		$str .= "\t\t\$update = false;\n";
+ 		$str .= "\t\t\$received = json_decode(file_get_contents('php://input'), true);\n";
+ 		foreach($entity -> table -> cols as $col) {
+ 			if(!in_array($col -> name, $entity -> table -> pk)) { /* Primary keys can't be updated with this */
+ 				$str .= "\t\tif(isset(\$received['" . $col -> name . "']) && in_array('" . $col -> name . "', Core::\$permission[\$role]['" . $entity -> table -> name . "']['update'])) {\n";
+ 				$str .= "\t\t\t\$" . $entity -> model_storage_name . " -> set" . self::titleCase($col -> name) . "(\$received['" . $col -> name . "']);\n";
+ 				$str .=	"\t\t}\n";
+ 			}
+ 		}
+ 		$str .=	"\n";
+ 		$str .= $this -> check_foreign_keys($entity);
+ 		$str .= "\t\t/* Update the row */\n";
+ 		$str .= "\t\ttry {\n";
+ 		$str .= "\t\t\t\$" . $entity -> model_storage_name . " -> update();\n";
+ 		$str .= "\t\t\treturn \$" . $entity -> model_storage_name . " -> toFilteredArray(\$role);\n";
+ 		$str .= "\t\t} catch(Exception \$e) {\n";
+ 		$str .= "\t\t\treturn array('error' => 'Failed to update row', 'code' => '500');\n";
+ 		$str .= "\t\t}\n";
+ 		$str .=	"\t}\n\n";
+	
 		/* End file */
 		$str .= "}\n?>";
 		
 		file_put_contents($this -> base . "/lib/Controller/" . $entity -> table -> name . "_Controller.php", $str);
 		echo $str;
+		include($this -> base . "/lib/Controller/" . $entity -> table -> name . "_Controller.php");
 		return;
 		
-		
-		$str .= "\t\t/* Insert new row */\n";
-		$str .= "\t\ttry {\n";
-		$str .= "\t\t\t\$" . $table -> name . " -> insert();\n";
-		$str .= "\t\t\treturn $" . $table -> name . " -> toFilteredArray(\$role);\n";
-		$str .= "\t\t} catch(Exception \$e) {\n";
-		$str .= "\t\t\treturn array('error' => 'Failed to add to database', 'code' => '500');\n";
-		$str .= "\t\t}\n";
-		$str .=	"\t}\n\n";
+ 		// Delete
+// 		$str .= "\tpublic static function delete(" . implode(",", $pkfields_defaults) . ") {\n";
+// 		$str .= "\t\t/* Check permission */\n";
+// 		$str .= "\t\t\$role = session::getRole();\n";
+// 		$str .= "\t\tif(!isset(Core::\$permission[\$role]['" . $table -> name . "']['delete']) || Core::\$permission[\$role]['" . $table -> name . "']['delete'] != true) {\n";
+// 		$str .= "\t\t\treturn array('error' => 'You do not have permission to do that', 'code' => '403');\n";
+// 		$str .= "\t\t}\n\n";
 	
-		// Read
-		$str .= "\tpublic static function read(" . implode(",", $pkfields_defaults) . ") {\n";
-		$str .= "\t\t/* Check permission */\n";
-		$str .= "\t\t\$role = session::getRole();\n";
-		$str .= "\t\tif(!isset(Core::\$permission[\$role]['" . $table -> name . "']['read']) || count(Core::\$permission[\$role]['" . $table -> name . "']['read']) == 0) {\n";
-		$str .= "\t\t\treturn array('error' => 'You do not have permission to do that', 'code' => '403');\n";
-		$str .= "\t\t}\n\n";
-		$str .= "\t\t/* Load ". $table -> name . " */\n";
-		$str .= "\t\t\$". $table -> name . " = " . $table -> name . "_Model::get(" . implode(",", $pkfields) . ");\n";
-		$str .= "\t\tif(!\$".$table -> name . ") {\n";
-		$str .= "\t\t\treturn array('error' => '" . $table -> name . " not found', 'code' => '404');\n";
-		$str .= "\t\t}\n";
-		if(isset($this -> rev_constraints[$table -> name]) && count($this -> rev_constraints[$table -> name]) != 0) {
-			foreach($this -> rev_constraints[$table -> name] as $child => $fk) {
-				$str .= "\t\t// \$" . $table -> name . " -> populate_list_".$child . "();\n";
-			}
-		}
-		$str .= "\t\treturn $" . $table -> name . " -> to_array_filtered(\$role);\n";
-		$str .=	"\t}\n\n";
+// 		$str .= "\t\t/* Load ". $table -> name . " */\n";
+// 		$str .= "\t\t\$". $table -> name . " = " . $table -> name . "_Model::get(" . implode(",", $pkfields) . ");\n";
+// 		$str .= "\t\tif(!\$".$table -> name . ") {\n";
+// 		$str .= "\t\t\treturn array('error' => '" . $table -> name . " not found', 'code' => '404');\n";
+// 		$str .= "\t\t}\n\n";
+// 		if(isset($this -> rev_constraints[$table -> name]) && count($this -> rev_constraints[$table -> name]) != 0) {
+// 			$str .= "\t\t/* Check for child rows */\n";
+// 			foreach($this -> rev_constraints[$table -> name] as $child => $fk) {
+// 				$str .= "\t\t\$" . $table -> name . " -> populate_list_".$child . "(0, 1);\n";
+// 				$str .= "\t\tif(count(\$" . $table -> name . " -> list_".$child . ") > 0) {\n";
+// 				$str .= "\t\t\treturn array('error' => 'Cannot delete " . $table -> name . " because of a related " . $child . " entry', 'code' => '400');\n";
+// 				$str .= "\t\t}\n";
+// 			}
+// 		}
+// 		$str .= "\n";
+// 		$str .= "\t\t/* Delete it */\n";
+// 		$str .= "\t\ttry {\n";
+// 		$str .= "\t\t\t\$". $table -> name . " -> delete();\n";
+// 		$str .= "\t\t\treturn array('success' => 'yes');\n";
+// 		$str .= "\t\t} catch(Exception \$e) {\n";
+// 		$str .= "\t\t\treturn array('error' => 'Failed to delete', 'code' => '500');\n";
+// 		$str .= "\t\t}\n";
+// 		$str .=	"\t}\n";
+// 		$str .= "\n";
 	
-		// Update
-		$str .= "\tpublic static function update(" . implode(",", $pkfields_defaults) . ") {\n";
-		$str .= "\t\t/* Check permission */\n";
-		$str .= "\t\t\$role = session::getRole();\n";
-		$str .= "\t\tif(!isset(Core::\$permission[\$role]['" . $table -> name . "']['update']) || count(Core::\$permission[\$role]['" . $table -> name . "']['update']) == 0) {\n";
-		$str .= "\t\t\treturn array('error' => 'You do not have permission to do that', 'code' => '403');\n";
-		$str .= "\t\t}\n\n";
-		$str .= "\t\t/* Load ". $table -> name . " */\n";
-		$str .= "\t\t\$". $table -> name . " = " . $table -> name . "_Model::get(" . implode(",", $pkfields) . ");\n";
-		$str .= "\t\tif(!\$".$table -> name . ") {\n";
-		$str .= "\t\t\treturn array('error' => '" . $table -> name . " not found', 'code' => '404');\n";
-		$str .= "\t\t}\n\n";
-		$str .= "\t\t/* Find fields to update */\n";
-		$str .= "\t\t\$update = false;\n";
-		$str .= "\t\t\$received = json_decode(file_get_contents('php://input'), true);\n";
-		foreach($table -> cols as $col) {
-			if(!in_array($col -> name, $table -> pk)) { /* Primary keys can't be updated with this */
-				$str .= "\t\tif(isset(\$received['" . $col -> name . "']) && in_array('" . $col -> name . "', Core::\$permission[\$role]['" . $table -> name . "']['update'])) {\n";
-				$str .= "\t\t\t\$" . $table -> name . " -> set_" . $col -> name . "(\$received['" . $col -> name . "']);\n";
-				$str .=	"\t\t}\n";
-			}
-		}
-		$str .=	"\n";
-		$str .= $this -> check_foreign_keys($table);
+ 		// List all
+// 		$str .= "\tpublic static function list_all(\$page = 1, \$itemspp = 20) {\n";
+// 		$str .= "\t\t/* Check permission */\n";
+// 		$str .= "\t\t\$role = session::getRole();\n";
+// 		$str .= "\t\tif(!isset(Core::\$permission[\$role]['" . $table -> name ."']['read']) || count(Core::\$permission[\$role]['" . $table -> name ."']['read']) == 0) {\n";
+// 		$str .= "\t\t\treturn array('error' => 'You do not have permission to do that', 'code' => '403');\n";
+// 		$str .= "\t\t}\n";
+// 		$str .= "\t\tif((int)\$page < 1 || (int)\$itemspp < 1) {\n";
+// 		$str .= "\t\t\t\$start = 0;\n";
+// 		$str .= "\t\t\t\$limit = -1;\n";
+// 		$str .= "\t\t} else {\n";
+// 		$str .= "\t\t\t\$start = (\$page - 1) * \$itemspp;\n";
+// 		$str .= "\t\t\t\$limit = \$itemspp;\n";
+// 		$str .= "\t\t}\n";
+// 		$str .= "\n";
+// 		$str .= "\t\t/* Retrieve and filter rows */\n";
+// 		$str .= "\t\ttry {\n";
+// 		$str .= "\t\t\t\$" . $table -> name ."_list = " . $table -> name ."_Model::listAll(\$start, \$limit);\n";
+// 		$str .= "\t\t\t\$ret = array();\n";
+// 		$str .= "\t\t\tforeach(\$" . $table -> name ."_list as \$" . $table -> name .") {\n";
+// 		$str .= "\t\t\t\t\$ret[] = \$" . $table -> name ." -> toFilteredArray(\$role);\n";
+// 		$str .= "\t\t\t}\n";
+// 		$str .= "\t\t\treturn \$ret;\n";
+// 		$str .= "\t\t} catch(Exception \$e) {\n";
+// 		$str .= "\t\t\treturn array('error' => 'Failed to list', 'code' => '500');\n";
+// 		$str .= "\t\t}\n";
+// 		$str .= "\t}\n";
 	
-		$str .= "\t\t/* Update the row */\n";
-		$str .= "\t\ttry {\n";
-		$str .= "\t\t\t\$" . $table -> name . " -> update();\n";
-		$str .= "\t\t\treturn $" . $table -> name . " -> to_array_filtered(\$role);\n";
-		$str .= "\t\t} catch(Exception \$e) {\n";
-		$str .= "\t\t\treturn array('error' => 'Failed to update row', 'code' => '500');\n";
-		$str .= "\t\t}\n";
-		$str .=	"\t}\n\n";
-	
-		// Delete
-		$str .= "\tpublic static function delete(" . implode(",", $pkfields_defaults) . ") {\n";
-		$str .= "\t\t/* Check permission */\n";
-		$str .= "\t\t\$role = session::getRole();\n";
-		$str .= "\t\tif(!isset(Core::\$permission[\$role]['" . $table -> name . "']['delete']) || Core::\$permission[\$role]['" . $table -> name . "']['delete'] != true) {\n";
-		$str .= "\t\t\treturn array('error' => 'You do not have permission to do that', 'code' => '403');\n";
-		$str .= "\t\t}\n\n";
-	
-		$str .= "\t\t/* Load ". $table -> name . " */\n";
-		$str .= "\t\t\$". $table -> name . " = " . $table -> name . "_Model::get(" . implode(",", $pkfields) . ");\n";
-		$str .= "\t\tif(!\$".$table -> name . ") {\n";
-		$str .= "\t\t\treturn array('error' => '" . $table -> name . " not found', 'code' => '404');\n";
-		$str .= "\t\t}\n\n";
-		if(isset($this -> rev_constraints[$table -> name]) && count($this -> rev_constraints[$table -> name]) != 0) {
-			$str .= "\t\t/* Check for child rows */\n";
-			foreach($this -> rev_constraints[$table -> name] as $child => $fk) {
-				$str .= "\t\t\$" . $table -> name . " -> populate_list_".$child . "(0, 1);\n";
-				$str .= "\t\tif(count(\$" . $table -> name . " -> list_".$child . ") > 0) {\n";
-				$str .= "\t\t\treturn array('error' => 'Cannot delete " . $table -> name . " because of a related " . $child . " entry', 'code' => '400');\n";
-				$str .= "\t\t}\n";
-			}
-		}
-		$str .= "\n";
-		$str .= "\t\t/* Delete it */\n";
-		$str .= "\t\ttry {\n";
-		$str .= "\t\t\t\$". $table -> name . " -> delete();\n";
-		$str .= "\t\t\treturn array('success' => 'yes');\n";
-		$str .= "\t\t} catch(Exception \$e) {\n";
-		$str .= "\t\t\treturn array('error' => 'Failed to delete', 'code' => '500');\n";
-		$str .= "\t\t}\n";
-		$str .=	"\t}\n";
-		$str .= "\n";
-	
-		// List all
-		$str .= "\tpublic static function list_all(\$page = 1, \$itemspp = 20) {\n";
-		$str .= "\t\t/* Check permission */\n";
-		$str .= "\t\t\$role = session::getRole();\n";
-		$str .= "\t\tif(!isset(Core::\$permission[\$role]['" . $table -> name ."']['read']) || count(Core::\$permission[\$role]['" . $table -> name ."']['read']) == 0) {\n";
-		$str .= "\t\t\treturn array('error' => 'You do not have permission to do that', 'code' => '403');\n";
-		$str .= "\t\t}\n";
-		$str .= "\t\tif((int)\$page < 1 || (int)\$itemspp < 1) {\n";
-		$str .= "\t\t\t\$start = 0;\n";
-		$str .= "\t\t\t\$limit = -1;\n";
-		$str .= "\t\t} else {\n";
-		$str .= "\t\t\t\$start = (\$page - 1) * \$itemspp;\n";
-		$str .= "\t\t\t\$limit = \$itemspp;\n";
-		$str .= "\t\t}\n";
-		$str .= "\n";
-		$str .= "\t\t/* Retrieve and filter rows */\n";
-		$str .= "\t\ttry {\n";
-		$str .= "\t\t\t\$" . $table -> name ."_list = " . $table -> name ."_Model::listAll(\$start, \$limit);\n";
-		$str .= "\t\t\t\$ret = array();\n";
-		$str .= "\t\t\tforeach(\$" . $table -> name ."_list as \$" . $table -> name .") {\n";
-		$str .= "\t\t\t\t\$ret[] = \$" . $table -> name ." -> to_array_filtered(\$role);\n";
-		$str .= "\t\t\t}\n";
-		$str .= "\t\t\treturn \$ret;\n";
-		$str .= "\t\t} catch(Exception \$e) {\n";
-		$str .= "\t\t\treturn array('error' => 'Failed to list', 'code' => '500');\n";
-		$str .= "\t\t}\n";
-		$str .= "\t}\n";
-	
-		// TODO: get_by.. (unique indexes), list_by_(non-unique), search_by (all text fields)
-	
+// 		// TODO: get_by.. (unique indexes), list_by_(non-unique), search_by (all text fields)
+// 	 */
 
 	}
 	
