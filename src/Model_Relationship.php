@@ -30,7 +30,7 @@ class Model_Relationship {
 				foreach($t -> unique as $u) {
 					$unique_keys[] = $u -> fields;
 				}
-				
+
 				foreach($unique_keys as $u) {
 					if(count($u) == 1 && $u[0] == $field) {
 						$this -> toOne = true;

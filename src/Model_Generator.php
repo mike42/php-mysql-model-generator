@@ -31,7 +31,6 @@ class Model_Generator {
 		system($cmd);
 
 		mkdir($this -> base . "/lib/Model");
-		mkdir($this -> base . "/doc/");
 		mkdir($this -> base . "/doc/diagram");
 
 		/* Generate default permissions */
@@ -570,7 +569,7 @@ class Model_Generator {
 		$str .=	"\t\t\t}\n";
 		$str .= "\t\t}\n";
 		$str .= "\t\t\$" . $entity -> model_storage_name . " = new " . $entity -> table -> name . "_Model(\$init);\n\n";
-		$str .= $this -> check_foreign_keys($entity);
+		$str .= $this -> check_parent_rows_exist($entity);
 		
 		
 		$str .= "\t\t/* Insert new row */\n";
@@ -623,7 +622,7 @@ class Model_Generator {
  			}
  		}
  		$str .=	"\n";
- 		$str .= $this -> check_foreign_keys($entity);
+ 		$str .= $this -> check_parent_rows_exist($entity);
  		$str .= "\t\t/* Update the row */\n";
  		$str .= "\t\ttry {\n";
  		$str .= "\t\t\t\$" . $entity -> model_storage_name . " -> update();\n";
@@ -642,27 +641,19 @@ class Model_Generator {
  		$str .= "\t\t}\n\n";
 	
  		$str .= "\t\t/* Load ". $entity -> table -> name . " */\n";
-// 		$str .= "\t\t\$". $table -> name . " = " . $table -> name . "_Model::get(" . implode(",", $pkfields) . ");\n";
-// 		$str .= "\t\tif(!\$".$table -> name . ") {\n";
-// 		$str .= "\t\t\treturn array('error' => '" . $table -> name . " not found', 'code' => '404');\n";
-// 		$str .= "\t\t}\n\n";
-// 		if(isset($this -> rev_constraints[$table -> name]) && count($this -> rev_constraints[$table -> name]) != 0) {
-// 			$str .= "\t\t/* Check for child rows */\n";
-// 			foreach($this -> rev_constraints[$table -> name] as $child => $fk) {
-// 				$str .= "\t\t\$" . $table -> name . " -> populate_list_".$child . "(0, 1);\n";
-// 				$str .= "\t\tif(count(\$" . $table -> name . " -> list_".$child . ") > 0) {\n";
-// 				$str .= "\t\t\treturn array('error' => 'Cannot delete " . $table -> name . " because of a related " . $child . " entry', 'code' => '400');\n";
-// 				$str .= "\t\t}\n";
-// 			}
-// 		}
-// 		$str .= "\n";
-// 		$str .= "\t\t/* Delete it */\n";
-// 		$str .= "\t\ttry {\n";
-// 		$str .= "\t\t\t\$". $table -> name . " -> delete();\n";
-// 		$str .= "\t\t\treturn array('success' => 'yes');\n";
-// 		$str .= "\t\t} catch(Exception \$e) {\n";
-// 		$str .= "\t\t\treturn array('error' => 'Failed to delete', 'code' => '500');\n";
-// 		$str .= "\t\t}\n";
+ 		$str .= "\t\t\$". $entity -> model_storage_name . " = " . $entity -> table -> name . "_Model::get(" . implode(",", $pkfields) . ");\n";
+ 		$str .= "\t\tif(!\$" . $entity -> model_storage_name . ") {\n";
+ 		$str .= "\t\t\treturn array('error' => '" . $entity -> table -> name . " not found', 'code' => '404');\n";
+ 		$str .= "\t\t}\n\n";
+ 		$str .= $this -> check_child_rows_dont_exist($entity);
+
+ 		$str .= "\t\t/* Delete it */\n";
+		$str .= "\t\ttry {\n";
+		$str .= "\t\t\t\$". $entity -> model_storage_name . " -> delete();\n";
+ 		$str .= "\t\t\treturn array('success' => 'yes');\n";
+ 		$str .= "\t\t} catch(Exception \$e) {\n";
+ 		$str .= "\t\t\treturn array('error' => 'Failed to delete', 'code' => '500');\n";
+ 		$str .= "\t\t}\n";
  		$str .=	"\t}\n";
  		$str .= "\n";
  		
@@ -712,28 +703,57 @@ class Model_Generator {
 	 *
 	 * @param SQL_Table $table
 	 */
-	private function check_foreign_keys(Model_Entity $entity) {
-		return "";
+	private function check_parent_rows_exist(Model_Entity $entity) {
 		$str = "";
 		if(count($entity -> parent) != 0) {
 			$str .= "\t\t/* Check parent tables */\n";
 			foreach($entity -> parent as $parent) {
-				$index = Model_Index::retrieveRelationshipIndex($entity -> index, $parent);
-				
-				echo $index -> getFunctionName();
-				die();
+				if($parent -> nullable) {
+					// Ignore if nullable
+					$str .= "\t\t// " . $parent -> dest -> model_storage_name . " is nullable and may not be set\n";
+					continue;
+				}
+				$index = Model_Index::retrieveFieldIndex($parent -> dest -> index, $parent -> constraint -> parent_fields);
 				$f = array();
 				foreach($parent -> constraint -> child_fields as $a) {
-					$f[] = "\$" . $entity -> table -> name . " -> get".self::titleCase($a);
+					$f[] = "\$" . $entity -> table -> name . " -> get".self::titleCase($a) . "()";
 				}
-				$str .= "\t\tif(!".$parent -> dest -> name . "_Model::" . $parent -> getFunctionName() . "(" . implode(", ", $f) . "())) {\n";
-				$str .= "\t\t\treturn array('error' => '" . $table -> name . " is invalid because related " . $parent -> parent_table . " does not exist', 'code' => '400');\n";
+				$str .= "\t\tif(!".$parent -> dest -> table -> name . "_Model::" . $index -> getFunctionName() . "(" . implode(", ", $f) . ")) {\n";
+				$str .= "\t\t\treturn array('error' => '" . $entity -> table -> name . " is invalid because the " . $parent -> dest -> model_storage_name . " does not exist', 'code' => '400');\n";
 				$str .= "\t\t}\n";
-/* 				if(Model_Entity::field_match($fk -> parent_fields, $this -> database -> table[$fk -> parent_table] -> pk)) {
-					
-				} */
 			}
-			$str .= "\n";
+			$str .=	"\n";
+		}
+		return $str;
+	}
+	
+	/**
+	 * Look up foreign keys and throw sensible exceptions
+	 *
+	 * @param SQL_Table $table
+	 */
+	private function check_child_rows_dont_exist(Model_Entity $entity) {
+
+		$str = "";
+		if(count($entity -> child) != 0) {
+			$str .= "\t\t/* Check for child rows */\n";
+			foreach($entity -> child as $child) {
+				// Figure out what to check
+				$index = Model_Index::retrieveRelationshipIndex($entity -> index, $child);
+				$f = array();
+				foreach($child -> constraint -> parent_fields as $a) {
+					$f[] = "\$" . $entity -> table -> name . " -> get".self::titleCase($a) . "()";
+				}
+				// Add check
+				if($index -> isUnique) {
+					$str .= "\t\tif(".$child -> dest -> table -> name . "_Model::" . $index -> getFunctionName() . "(" . implode(", ", $f) . ") !== NULL) {\n";
+				} else {
+					$str .= "\t\tif(count(" . $child -> dest -> table -> name . "_Model::" . $index -> getFunctionName() . "(" . implode(", ", $f) . "(0, 1))) > 0) {\n";
+				}
+				$str .= "\t\t\treturn array('error' => 'Cannot delete " . $entity -> model_storage_name . " because it still has a " . $child -> dest -> model_storage_name . ". Please delete that first.', 'code' => '400');\n";
+				$str .= "\t\t}\n";
+			}
+			$str .=	"\n";
 		}
 		return $str;
 	}
@@ -751,7 +771,7 @@ class Model_Generator {
 	private function backbone_model(SQL_Table $table) {
 		$str = "";
 		$str .= "/* " . $table -> name . " */\n";
-		$str .= "var " . $table -> name . "_model = Backbone.Model.extend({\n";
+		$str .= "var " . $table -> name . "_Model = Backbone.Model.extend({\n";
 		$str .= "\turlRoot: '/" . $this -> database -> name . "/api/" . $table -> name . "',\n";
 	
 		if($table -> pk[0] != 'id') {
@@ -779,8 +799,8 @@ class Model_Generator {
 		$str .= "});\n";
 	
 		$str .= "var " . $table -> name . "_collection = Backbone.Collection.extend({\n";
-		$str .= "\turl : '/dl/api/" . $table -> name . "/list_all/',\n";
-		$str .= "\tmodel : " . $table -> name . "_model\n";
+		$str .= "\turl : '/" . $this -> base . "/api/" . $table -> name . "/list_all/',\n";
+		$str .= "\tmodel : " . $table -> name . "Mmodel\n";
 		$str .= "});\n\n";
 		return $str;
 	}

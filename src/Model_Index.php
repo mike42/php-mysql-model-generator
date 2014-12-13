@@ -25,6 +25,31 @@ class Model_Index {
 		return $indices;
 	}
 	
+	/**
+	 * Look up a field list in a list of indices, and return the one that matches.
+	 * 
+	 * @param array $indices
+	 * @param array $fields
+	 * @throws Exception
+	 * @return unknown
+	 */
+	public static function retrieveFieldIndex(array $indices, array $fields) {
+		foreach($indices as $key => $index) {
+			if(self::field_match($fields, $index -> fields)) {
+				return $index;
+			}
+		}
+		throw new Exception("Index not found with fields specified: " . implode(", ", $new -> fields));
+	}
+	
+	/**
+	 * Look up relationship in a list of indices, and return the one that matches.
+	 * 
+	 * @param array $indices
+	 * @param Model_Relationship $rel
+	 * @throws Exception
+	 * @return unknown
+	 */
 	public static function retrieveRelationshipIndex(array $indices, Model_Relationship $rel) {
 		$new = Model_Index::fromModel_Relationship($rel);
 		foreach($indices as $key => $index) {
