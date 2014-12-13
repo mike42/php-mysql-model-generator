@@ -224,7 +224,7 @@ class Model_Generator {
 				"\t\t\treturn false;\n" .
 				"\t\t}\n" .
 				"\t\t\$values = array();\n" .
-				"\t\t\$everything = \$this -> to_array();\n" .
+				"\t\t\$everything = \$this -> toArray();\n" .
 				"\t\tforeach(Core::\$permission[\$role]['" . $entity -> table -> name ."']['read'] as \$field) {\n" .
 				"\t\t\tif(!isset(\$everything[\$field])) {\n" .
 				"\t\t\t\tthrow new Exception(\"Check permissions: '\$field' is not a real field in " . $entity -> table -> name ."\");\n" .
@@ -348,7 +348,7 @@ class Model_Generator {
 				"\t\t}\n\n" .
 				"\t\t/* Compose list of changed fields */\n" .
 				"\t\t\$fieldset = array();\n" .
-				"\t\t\$everything = \$this -> to_array();\n";
+				"\t\t\$everything = \$this -> toArray();\n";
 		foreach($entity -> table -> pk as $fieldname) {
 			$str .= "\t\t\$data['$fieldname'] = \$this -> get".self::titleCase($fieldname)."();\n";
 		}
@@ -371,7 +371,7 @@ class Model_Generator {
 				"\t\t/* Compose list of set fields */\n" .
 				"\t\t\$fieldset = array();\n" .
 				"\t\t\$data = array();\n" .
-				"\t\t\$everything = \$this -> to_array();\n" .
+				"\t\t\$everything = \$this -> toArray();\n" .
 				"\t\tforeach(\$this -> model_variables_set as \$col => \$changed) {\n" .
 				"\t\t\t\$fieldset[] = \"`\$col`\";\n" .
 				"\t\t\t\$fieldset_colon[] = \":\$col\";\n" .
