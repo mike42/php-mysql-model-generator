@@ -689,7 +689,6 @@ class Model_Generator {
  		$str .= "}\n?>";
 
  		file_put_contents($this -> base . "/lib/Controller/" . $entity -> table -> name . "_Controller.php", $str);
- 		echo $str;
  		include($this -> base . "/lib/Controller/" . $entity -> table -> name . "_Controller.php");
 // 		// TODO: get_by.. (unique indexes), list_by_(non-unique), search_by (all text fields)
 	}
