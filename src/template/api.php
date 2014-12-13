@@ -62,7 +62,7 @@ if(count($arg) > 2) {
 
 /* Figure out class and method name */
 try {
-	$controllerClassName = $controller.'_controller';
+	$controllerClassName = $controller.'_Controller';
 	$controllerMethodName = $action;
 	core::loadClass($controllerClassName);
 	if(!is_callable($controllerClassName . "::" . $controllerMethodName)) {
