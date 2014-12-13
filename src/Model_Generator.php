@@ -657,45 +657,41 @@ class Model_Generator {
  		$str .=	"\t}\n";
  		$str .= "\n";
  		
+ 		// List all
+ 		$str .= "\tpublic static function list_all(\$page = 1, \$itemspp = 20) {\n";
+ 		$str .= "\t\t/* Check permission */\n";
+ 		$str .= "\t\t\$role = session::getRole();\n";
+ 		$str .= "\t\tif(!isset(Core::\$permission[\$role]['" . $entity -> table -> name ."']['read']) || count(Core::\$permission[\$role]['" . $entity -> table -> name ."']['read']) == 0) {\n";
+ 		$str .= "\t\t\treturn array('error' => 'You do not have permission to do that', 'code' => '403');\n";
+ 		$str .= "\t\t}\n";
+ 		$str .= "\t\tif((int)\$page < 1 || (int)\$itemspp < 1) {\n";
+ 		$str .= "\t\t\t\$start = 0;\n";
+ 		$str .= "\t\t\t\$limit = -1;\n";
+ 		$str .= "\t\t} else {\n";
+ 		$str .= "\t\t\t\$start = (\$page - 1) * \$itemspp;\n";
+ 		$str .= "\t\t\t\$limit = \$itemspp;\n";
+ 		$str .= "\t\t}\n";
+ 		$str .= "\n";
+ 		$str .= "\t\t/* Retrieve and filter rows */\n";
+ 		$str .= "\t\ttry {\n";
+ 		$str .= "\t\t\t\$" . $entity -> model_storage_name ."_list = " . $entity -> table -> name ."_Model::listAll(\$start, \$limit);\n";
+ 		$str .= "\t\t\t\$ret = array();\n";
+ 		$str .= "\t\t\tforeach(\$" . $entity -> model_storage_name ."_list as \$" . $entity -> model_storage_name .") {\n";
+ 		$str .= "\t\t\t\t\$ret[] = \$" . $entity -> model_storage_name ." -> toFilteredArray(\$role);\n";
+ 		$str .= "\t\t\t}\n";
+ 		$str .= "\t\t\treturn \$ret;\n";
+ 		$str .= "\t\t} catch(Exception \$e) {\n";
+ 		$str .= "\t\t\treturn array('error' => 'Failed to list', 'code' => '500');\n";
+ 		$str .= "\t\t}\n";
+ 		$str .= "\t}\n";
+	
  		/* End file */
  		$str .= "}\n?>";
- 		
+
  		file_put_contents($this -> base . "/lib/Controller/" . $entity -> table -> name . "_Controller.php", $str);
  		echo $str;
  		include($this -> base . "/lib/Controller/" . $entity -> table -> name . "_Controller.php");
- 		return;
-	
- 		// List all
-// 		$str .= "\tpublic static function list_all(\$page = 1, \$itemspp = 20) {\n";
-// 		$str .= "\t\t/* Check permission */\n";
-// 		$str .= "\t\t\$role = session::getRole();\n";
-// 		$str .= "\t\tif(!isset(Core::\$permission[\$role]['" . $table -> name ."']['read']) || count(Core::\$permission[\$role]['" . $table -> name ."']['read']) == 0) {\n";
-// 		$str .= "\t\t\treturn array('error' => 'You do not have permission to do that', 'code' => '403');\n";
-// 		$str .= "\t\t}\n";
-// 		$str .= "\t\tif((int)\$page < 1 || (int)\$itemspp < 1) {\n";
-// 		$str .= "\t\t\t\$start = 0;\n";
-// 		$str .= "\t\t\t\$limit = -1;\n";
-// 		$str .= "\t\t} else {\n";
-// 		$str .= "\t\t\t\$start = (\$page - 1) * \$itemspp;\n";
-// 		$str .= "\t\t\t\$limit = \$itemspp;\n";
-// 		$str .= "\t\t}\n";
-// 		$str .= "\n";
-// 		$str .= "\t\t/* Retrieve and filter rows */\n";
-// 		$str .= "\t\ttry {\n";
-// 		$str .= "\t\t\t\$" . $table -> name ."_list = " . $table -> name ."_Model::listAll(\$start, \$limit);\n";
-// 		$str .= "\t\t\t\$ret = array();\n";
-// 		$str .= "\t\t\tforeach(\$" . $table -> name ."_list as \$" . $table -> name .") {\n";
-// 		$str .= "\t\t\t\t\$ret[] = \$" . $table -> name ." -> toFilteredArray(\$role);\n";
-// 		$str .= "\t\t\t}\n";
-// 		$str .= "\t\t\treturn \$ret;\n";
-// 		$str .= "\t\t} catch(Exception \$e) {\n";
-// 		$str .= "\t\t\treturn array('error' => 'Failed to list', 'code' => '500');\n";
-// 		$str .= "\t\t}\n";
-// 		$str .= "\t}\n";
-	
 // 		// TODO: get_by.. (unique indexes), list_by_(non-unique), search_by (all text fields)
-// 	 */
-
 	}
 	
 	/**
