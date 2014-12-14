@@ -778,12 +778,16 @@ class Model_Generator {
 		$defaults = array();
 		foreach($table -> cols as $col) {
 			if($col -> name != $table -> pk[0]) {
-				switch($col -> type) {
-					case 'INT':
-						$a = "0";
-						break;
-					default:
-						$a = "''";
+				if($col -> nullable) {
+					$a = "null";
+				} else {
+					switch($col -> type) {
+						case 'INT':
+							$a = "0";
+							break;
+						default:
+							$a = "''";
+					}
 				}
 				$defaults[] = "\t\t" . $col -> name . ": $a";
 			}
