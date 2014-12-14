@@ -770,11 +770,11 @@ class Model_Generator {
 		$str .= "\turlRoot: '/" . $this -> database -> name . "/api/" . $table -> name . "',\n";
 	
 		if($table -> pk[0] != 'id') {
-			$str .= "\tidAttribute: '" . $table -> pk[0] . "',\n";
+			$str .= "\tidAttribute : '" . $table -> pk[0] . "',\n";
 		}
 	
 		/* Defaults */
-		$str .= "\tdefaults: {\n";
+		$str .= "\tdefaults : {\n";
 		$defaults = array();
 		foreach($table -> cols as $col) {
 			if($col -> name != $table -> pk[0]) {
@@ -793,9 +793,9 @@ class Model_Generator {
 	
 		$str .= "});\n";
 	
-		$str .= "var " . $table -> name . "_collection = Backbone.Collection.extend({\n";
-		$str .= "\turl : '/" . $this -> base . "/api/" . $table -> name . "/list_all/',\n";
-		$str .= "\tmodel : " . $table -> name . "Mmodel\n";
+		$str .= "var " . $table -> name . "_Collection = Backbone.Collection.extend({\n";
+		$str .= "\turl : '/" . $this -> database -> name . "/api/" . $table -> name . "/list_all/',\n";
+		$str .= "\tmodel : " . $table -> name . "_Model\n";
 		$str .= "});\n\n";
 		return $str;
 	}
