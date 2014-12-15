@@ -1,7 +1,7 @@
 <?php
 class Session_Controller {
 	public static function init() {
-		core::loadClass("session");
+		core::loadClass("Session");
 	}
 	
 	public static function login() {
