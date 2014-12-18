@@ -12,15 +12,15 @@ class Session_Controller {
 		/* Get username & password */
 		$username = $_POST['username'];
 		$password = $_POST['password'];
-		$ok = session::authenticate($username, $password);
+		$ok = Session::authenticate($username, $password);
 		if($ok) {
-			return array('success' => 'true', 'username' => $username, 'role' => session::getRole());
+			return array('success' => 'true', 'username' => $username, 'role' => Session::getRole());
 		}
 		return array('error' => 'Login failed', 'code' => '403');
 	}
 	
 	public static function logout() {
-		session::logout();
+		Session::logout();
 		return array('success' => 'true'); // Log-out will always succeed
 	}
 }

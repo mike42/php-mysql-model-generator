@@ -455,6 +455,7 @@ class Model_Generator {
 						"\t\t\t\$assoc = self::row_to_assoc(\$row);\n" .
 						"\t\t\t\$ret[] = new " . $entity -> table -> name . "_Model(\$assoc);\n" .
 						"\t\t}\n";
+				$str .= "\t\treturn \$ret;\n";
 			} else {
 				// Querying for a single item
 				$str .= "\t\t\$sth = Database::\$dbh -> prepare(self::SELECT_QUERY . \"$sql;\");\n";
@@ -488,6 +489,7 @@ class Model_Generator {
 				"\t\t\t\$assoc = self::row_to_assoc(\$row);\n" .
 				"\t\t\t\$ret[] = new " . $entity -> table -> name . "_Model(\$assoc);\n" .
 				"\t\t}\n";
+		$str .= "\t\treturn \$ret;\n";
 		$str .= "\t}\n";
 		
 		/* Search by text fields */
@@ -517,6 +519,7 @@ class Model_Generator {
 					"\t\t\t\$assoc = self::row_to_assoc(\$row);\n" .
 					"\t\t\t\$ret[] = new " . $entity -> table -> name . "_Model(\$assoc);\n" .
 					"\t\t}\n";
+		$str .= "\t\treturn \$ret;\n";
 			$str .= "\t}\n";
 		}
 		
@@ -555,7 +558,7 @@ class Model_Generator {
 		// Create
 		$str .= "\tpublic static function create() {\n";
 		$str .= "\t\t/* Check permission */\n";
-		$str .= "\t\t\$role = session::getRole();\n";
+		$str .= "\t\t\$role = Session::getRole();\n";
 		$str .= "\t\tif(!isset(Core::\$permission[\$role]['" . $entity -> table -> name . "']['create']) || Core::\$permission[\$role]['" . $entity -> table -> name . "']['create'] != true) {\n";
 		$str .= "\t\t\treturn array('error' => 'You do not have permission to do that', 'code' => '403');\n";
 		$str .= "\t\t}\n\n";
@@ -584,7 +587,7 @@ class Model_Generator {
 		// Read
 		$str .= "\tpublic static function read(" . implode(",", $pkfields_defaults) . ") {\n";
 		$str .= "\t\t/* Check permission */\n";
-		$str .= "\t\t\$role = session::getRole();\n";
+		$str .= "\t\t\$role = Session::getRole();\n";
 		$str .= "\t\tif(!isset(Core::\$permission[\$role]['" . $entity -> table -> name . "']['read']) || count(Core::\$permission[\$role]['" . $entity -> table -> name . "']['read']) == 0) {\n";
 		$str .= "\t\t\treturn array('error' => 'You do not have permission to do that', 'code' => '403');\n";
 		$str .= "\t\t}\n\n";
@@ -602,7 +605,7 @@ class Model_Generator {
  		// Update
  		$str .= "\tpublic static function update(" . implode(",", $pkfields_defaults) . ") {\n";
  		$str .= "\t\t/* Check permission */\n";
- 		$str .= "\t\t\$role = session::getRole();\n";
+ 		$str .= "\t\t\$role = Session::getRole();\n";
  		$str .= "\t\tif(!isset(Core::\$permission[\$role]['" . $entity -> table -> name . "']['update']) || count(Core::\$permission[\$role]['" . $entity -> table -> name . "']['update']) == 0) {\n";
  		$str .= "\t\t\treturn array('error' => 'You do not have permission to do that', 'code' => '403');\n";
  		$str .= "\t\t}\n\n";
@@ -635,7 +638,7 @@ class Model_Generator {
  		// Delete
  		$str .= "\tpublic static function delete(" . implode(",", $pkfields_defaults) . ") {\n";
  		$str .= "\t\t/* Check permission */\n";
- 		$str .= "\t\t\$role = session::getRole();\n";
+ 		$str .= "\t\t\$role = Session::getRole();\n";
  		$str .= "\t\tif(!isset(Core::\$permission[\$role]['" . $entity -> table -> name . "']['delete']) || Core::\$permission[\$role]['" . $entity -> table -> name . "']['delete'] != true) {\n";
  		$str .= "\t\t\treturn array('error' => 'You do not have permission to do that', 'code' => '403');\n";
  		$str .= "\t\t}\n\n";
@@ -660,7 +663,7 @@ class Model_Generator {
  		// List all
  		$str .= "\tpublic static function list_all(\$page = 1, \$itemspp = 20) {\n";
  		$str .= "\t\t/* Check permission */\n";
- 		$str .= "\t\t\$role = session::getRole();\n";
+ 		$str .= "\t\t\$role = Session::getRole();\n";
  		$str .= "\t\tif(!isset(Core::\$permission[\$role]['" . $entity -> table -> name ."']['read']) || count(Core::\$permission[\$role]['" . $entity -> table -> name ."']['read']) == 0) {\n";
  		$str .= "\t\t\treturn array('error' => 'You do not have permission to do that', 'code' => '403');\n";
  		$str .= "\t\t}\n";
