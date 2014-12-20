@@ -568,7 +568,7 @@ class Model_Generator {
 		$str .= "\t\t\$received = json_decode(file_get_contents('php://input'), true, 2);\n";
 		$str .= "\t\tforeach(\$fields as \$field) {\n";
 		$str .= "\t\t\tif(isset(\$received[\$field])) {\n";
-		$str .= "\t\t\t\t\$init[\"" . $entity -> table -> name . ".\$field\"] = \$received[\$field];\n";
+		$str .= "\t\t\t\t\$init[\"\$field\"] = \$received[\$field];\n";
 		$str .=	"\t\t\t}\n";
 		$str .= "\t\t}\n";
 		$str .= "\t\t\$" . $entity -> model_storage_name . " = new " . $entity -> table -> name . "_Model(\$init);\n\n";
