@@ -24,7 +24,8 @@ class Model_Entity {
 		$this -> child = $this -> parent = array();
 		$this -> table = $table;
 		$this -> index = array();
-
+		$this -> loadIndices();
+		
 		if(array_search($table -> name, $children) !== false) {
 			/* Only recurse if this item has not yet appeared in the tree */
 			return;
@@ -109,7 +110,12 @@ class Model_Entity {
 				$queue[] = $p -> dest;
 			}
 		}
+	}
 
+	/**
+	 * Assemble all indices into an array with neat names
+	 */
+	private function loadIndices() {
 		/* Queue up all the indexes to make a list */
 		$this -> index = Model_Index::addIndex($this -> index, new Model_Index($this -> table -> pk, null, true));
 		foreach($this -> parent as $parent) {
@@ -125,7 +131,7 @@ class Model_Entity {
 			$this -> index = Model_Index::addIndex($this -> index, $new);
 		}
 	}
-
+	
 	public function toGraphVizDotFile() {
 		return "digraph G {\n    overlap=false;rankdir=LR;splines=true;    \n    node[shape=record,colorscheme=set39,style=filled];\n    ".implode("\n    ", $this -> toGraphVizDot()) . "\n}\n";
 	}

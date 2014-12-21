@@ -78,7 +78,7 @@ class Model_Generator {
 
 	private function make_model(Model_Entity $entity) {
 		$data = $entity -> process();
-
+		
 		/* Figure out PK */
 		$pkfields = array();
 		$pkfields_name_only = array();
@@ -123,11 +123,11 @@ class Model_Generator {
 
 		/* Child tables */
 		foreach($entity -> child as $child) {
-			$index = Model_Index::retrieveRelationshipIndex($entity -> index, $child);
+			$index = Model_Index::retrieveChildIndex($child);
 			if($index -> isUnique) {
-				$str .= self::blockComment("Child row which references this table. Null until you call " . $index -> getFunctionName() . " to populate it.\n\n@var " . $child -> dest -> table -> name . "_Model \$" . $child -> dest -> model_storage_name, 1);
+				$str .= self::blockComment("Child row which references this table. Null until you call load" . self::titleCase($child -> dest -> model_storage_name) . "() to populate it.\n\n@var " . $child -> dest -> table -> name . "_Model \$" . $child -> dest -> model_storage_name, 1);
 			} else {
-				$str .= self::blockComment("Array of child rows which reference this table. Call " . $index -> getFunctionName() . " to populate it\n\n@var " . $child -> dest -> table -> name . "_Model|Array \$" . $child -> dest -> model_storage_name, 1);
+				$str .= self::blockComment("Array of child rows which reference this table. Call load" . self::titleCase($child -> dest -> model_storage_name) . "() to populate it\n\n@var " . $child -> dest -> table -> name . "_Model|Array \$" . $child -> dest -> model_storage_name, 1);
 			}
 			$str .= "\tpublic \$". $child -> dest -> model_storage_name . ";\n\n";
 		}
@@ -199,7 +199,8 @@ class Model_Generator {
 			$str .= "\n";
 			$str .= "\t\t/* Don't load child tables */\n";
 			foreach($entity -> child as $child) {
-				$str .= "\t\t\$this -> " . $child -> dest -> model_storage_name . " = " . ( !$child -> toOne ? "array()" : "null") .  ";\n";
+				$index = Model_Index::retrieveChildIndex($child);
+				$str .= "\t\t\$this -> " . $child -> dest -> model_storage_name . " = " . ( !$index -> isUnique ? "array()" : "null") .  ";\n";
 			}
 		}
 		$str .= "\t}\n";
@@ -400,7 +401,7 @@ class Model_Generator {
 		
 		/* Populate child tables */
 		foreach($entity -> child as $child) {
-			$index = Model_Index::retrieveRelationshipIndex($entity -> index, $child);
+			$index = Model_Index::retrieveChildIndex($child);
 			$joinFields = $this -> listFields($this -> database -> table[$child -> dest -> table -> name], $child -> constraint -> parent_fields, true);
 				
 			if(!$index -> isUnique) {
@@ -530,7 +531,11 @@ class Model_Generator {
 		include($fn); // Very crude syntax check
 		return;
 	}
-
+	
+	/**
+	 * Generate controller
+	 * @param Model_Entity $entity
+	 */
 	private function make_controller(Model_Entity $entity) {
 		$pkfields = $this -> listFields($entity -> table, $entity -> table -> pk, true);
 		$pkfields_defaults = array();
@@ -731,13 +736,12 @@ class Model_Generator {
 	 * @param SQL_Table $table
 	 */
 	private function check_child_rows_dont_exist(Model_Entity $entity) {
-
 		$str = "";
 		if(count($entity -> child) != 0) {
 			$str .= "\t\t/* Check for child rows */\n";
 			foreach($entity -> child as $child) {
 				// Figure out what to check
-				$index = Model_Index::retrieveRelationshipIndex($entity -> index, $child);
+				$index = Model_Index::retrieveChildIndex($child);
 				$f = array();
 				foreach($child -> constraint -> parent_fields as $a) {
 					$f[] = "\$" . $entity -> table -> name . " -> get".self::titleCase($a) . "()";
@@ -746,7 +750,7 @@ class Model_Generator {
 				if($index -> isUnique) {
 					$str .= "\t\tif(".$child -> dest -> table -> name . "_Model::" . $index -> getFunctionName() . "(" . implode(", ", $f) . ") !== NULL) {\n";
 				} else {
-					$str .= "\t\tif(count(" . $child -> dest -> table -> name . "_Model::" . $index -> getFunctionName() . "(" . implode(", ", $f) . "(0, 1))) > 0) {\n";
+					$str .= "\t\tif(count(" . $child -> dest -> table -> name . "_Model::" . $index -> getFunctionName() . "(" . implode(", ", $f) . ", 0, 1)) > 0) {\n";
 				}
 				$str .= "\t\t\treturn array('error' => 'Cannot delete " . $entity -> model_storage_name . " because it still has a " . $child -> dest -> model_storage_name . ". Please delete that first.', 'code' => '400');\n";
 				$str .= "\t\t}\n";

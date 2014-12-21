@@ -50,9 +50,27 @@ class Model_Index {
 	 * @throws Exception
 	 * @return unknown
 	 */
-	public static function retrieveRelationshipIndex(array $indices, Model_Relationship $rel) {
+	public static function retrieveParentIndex(array $indices, Model_Relationship $rel) {
 		$new = Model_Index::fromModel_Relationship($rel);
 		foreach($indices as $key => $index) {
+			if(self::field_match($new -> fields, $index -> fields)) {
+				return $index;
+			}
+		}
+		throw new Exception("Index not found with fields specified: " . implode(", ", $new -> fields));
+	}
+	
+	/**
+	 * Look up relationship in a list of indices, and return the one that matches.
+	 *
+	 * @param array $indices
+	 * @param Model_Relationship $rel
+	 * @throws Exception
+	 * @return unknown
+	 */
+	public static function retrieveChildIndex(Model_Relationship $child) {
+		$new = Model_Index::fromModel_RelationshipRev($child);
+		foreach($child -> dest -> index as $key => $index) {
 			if(self::field_match($new -> fields, $index -> fields)) {
 				return $index;
 			}
@@ -80,6 +98,10 @@ class Model_Index {
 	
 	public static function fromModel_Relationship(Model_Relationship $orig) {
 		return new Model_Index($orig -> constraint -> child_fields, $orig -> dest -> model_storage_name, false);
+	}
+	
+	public static function fromModel_RelationshipRev(Model_Relationship $orig) {
+		return new Model_Index($orig -> constraint -> parent_fields, $orig -> dest -> model_storage_name, false);
 	}
 	
 	/**
