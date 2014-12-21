@@ -39,7 +39,7 @@ class Model_Index {
 				return $index;
 			}
 		}
-		throw new Exception("Index not found with fields specified: " . implode(", ", $new -> fields));
+		throw new Exception("Index not found with fields specified: " . implode(", ", $fields));
 	}
 	
 	/**

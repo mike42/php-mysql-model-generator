@@ -711,17 +711,17 @@ class Model_Generator {
 		if(count($entity -> parent) != 0) {
 			$str .= "\t\t/* Check parent tables */\n";
 			foreach($entity -> parent as $parent) {
-				if($parent -> nullable) {
-					// Ignore if nullable
-					$str .= "\t\t// " . $parent -> dest -> model_storage_name . " is nullable and may not be set\n";
-					continue;
-				}
-				$index = Model_Index::retrieveFieldIndex($parent -> dest -> index, $parent -> constraint -> parent_fields);
+				$index = Model_Index::retrieveChildIndex($parent);
 				$f = array();
 				foreach($parent -> constraint -> child_fields as $a) {
 					$f[] = "\$" . $entity -> table -> name . " -> get".self::titleCase($a) . "()";
 				}
-				$str .= "\t\tif(!".$parent -> dest -> table -> name . "_Model::" . $index -> getFunctionName() . "(" . implode(", ", $f) . ")) {\n";
+				$str .= "\t\tif(";
+				if($parent -> nullable) {
+					// If nullable, only check when not null
+					$str .= implode(" !== NULL && ", $f) . " !== NULL && ";
+				}
+				$str .= $parent -> dest -> table -> name . "_Model::" . $index -> getFunctionName() . "(" . implode(", ", $f) . ") == NULL) {\n";
 				$str .= "\t\t\treturn array('error' => '" . $entity -> table -> name . " is invalid because the " . $parent -> dest -> model_storage_name . " does not exist', 'code' => '400');\n";
 				$str .= "\t\t}\n";
 			}
@@ -743,7 +743,7 @@ class Model_Generator {
 				// Figure out what to check
 				$index = Model_Index::retrieveChildIndex($child);
 				$f = array();
-				foreach($child -> constraint -> parent_fields as $a) {
+				foreach($child -> constraint -> child_fields as $a) {
 					$f[] = "\$" . $entity -> table -> name . " -> get".self::titleCase($a) . "()";
 				}
 				// Add check
