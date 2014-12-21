@@ -293,7 +293,7 @@ class Model_Generator {
 					$cols = array();
 					while(isset($data['fields'][$i]) && $data['fields'][$i]['table'] == $field['table']) {
 						if(!$this -> is_nullable($field['table_orig'], $data['fields'][$i]['col'])) {
-							$criteria[] = "\$row[$i] !== NULL";
+							$criteria[] = "\$row[$i] !== null";
 						}
 						$cols[] = "\t\t\t\t" . str_repeat("\t", count($stack)) . "\"" . $data['fields'][$i]['col'] . "\" => \$row[$i]";
 						$i++;
@@ -719,9 +719,9 @@ class Model_Generator {
 				$str .= "\t\tif(";
 				if($parent -> nullable) {
 					// If nullable, only check when not null
-					$str .= implode(" !== NULL && ", $f) . " !== NULL && ";
+					$str .= implode(" !== null && ", $f) . " !== null && ";
 				}
-				$str .= $parent -> dest -> table -> name . "_Model::" . $index -> getFunctionName() . "(" . implode(", ", $f) . ") == NULL) {\n";
+				$str .= $parent -> dest -> table -> name . "_Model::" . $index -> getFunctionName() . "(" . implode(", ", $f) . ") == null) {\n";
 				$str .= "\t\t\treturn array('error' => '" . $entity -> table -> name . " is invalid because the " . $parent -> dest -> model_storage_name . " does not exist', 'code' => '400');\n";
 				$str .= "\t\t}\n";
 			}
@@ -748,7 +748,7 @@ class Model_Generator {
 				}
 				// Add check
 				if($index -> isUnique) {
-					$str .= "\t\tif(".$child -> dest -> table -> name . "_Model::" . $index -> getFunctionName() . "(" . implode(", ", $f) . ") !== NULL) {\n";
+					$str .= "\t\tif(".$child -> dest -> table -> name . "_Model::" . $index -> getFunctionName() . "(" . implode(", ", $f) . ") !== null) {\n";
 				} else {
 					$str .= "\t\tif(count(" . $child -> dest -> table -> name . "_Model::" . $index -> getFunctionName() . "(" . implode(", ", $f) . ", 0, 1)) > 0) {\n";
 				}
