@@ -180,7 +180,7 @@ class Model_Generator {
 
 			$str .= "\t\t/* Set variables based on what information we have */\n";
 			foreach($entity -> table -> cols as $col) {
-				$str .= "\t\tif(isset(\$fields['" . $col -> name . "'])) {\n" .
+				$str .= "\t\tif(array_key_exists('" . $col -> name . "', \$fields)) {\n" .
 						"\t\t\t\$this -> set" . self::titleCase($col -> name) . "(\$fields['" . $col -> name . "']);\n" .
 						"\t\t}\n";
 			}
@@ -227,7 +227,7 @@ class Model_Generator {
 				"\t\t\$values = array();\n" .
 				"\t\t\$everything = \$this -> toArray();\n" .
 				"\t\tforeach(Core::\$permission[\$role]['" . $entity -> table -> name ."']['read'] as \$field) {\n" .
-				"\t\t\tif(!isset(\$everything[\$field])) {\n" .
+				"\t\t\tif(!array_key_exists(\$field, \$everything)) {\n" .
 				"\t\t\t\tthrow new Exception(\"Check permissions: '\$field' is not a real field in " . $entity -> table -> name ."\");\n" .
 				"\t\t\t}\n" .
 				"\t\t\t\$values[\$field] = \$everything[\$field];\n" .
@@ -574,7 +574,7 @@ class Model_Generator {
 		$str .= "\t\t\$init = array();\n";
 		$str .= "\t\t\$received = json_decode(file_get_contents('php://input'), true, 2);\n";
 		$str .= "\t\tforeach(\$fields as \$field) {\n";
-		$str .= "\t\t\tif(isset(\$received[\$field])) {\n";
+		$str .= "\t\t\tif(array_key_exists(\$field, \$received)) {\n";
 		$str .= "\t\t\t\t\$init[\"\$field\"] = \$received[\$field];\n";
 		$str .=	"\t\t\t}\n";
 		$str .= "\t\t}\n";
@@ -843,32 +843,40 @@ class Model_Generator {
 	 * @return string
 	 */
 	private function validate_type(SQL_Table $table, SQL_Colspec $col) {
+		$nullcheck = $col -> nullable ? "\$".$col -> name . " !== null && " : " \$".$col -> name . " === null || ";
 		if($col -> type == "INT") {
-			return "\t\tif(!is_numeric(\$".$col -> name . ")) {\n" .
+			return "\t\tif(${nullcheck}!is_numeric(\$".$col -> name . ")) {\n" .
 					"\t\t\tthrow new Exception(\"" . $table -> name . "." . $col -> name . " must be numeric\");\n" .
 					"\t\t}\n";
 		} else if($col -> type == "VARCHAR") {
 			if(isset($col -> size[0])) {
-				return "\t\tif(strlen(\$".$col -> name . ") > ".$col -> size[0]. ") {\n" .
+				return "\t\tif(${nullcheck}strlen(\$".$col -> name . ") > ".$col -> size[0]. ") {\n" .
 						"\t\t\tthrow new Exception(\"" . $table -> name . "." . $col -> name . " cannot be longer than ".$col -> size[0]. " characters\");\n" .
 						"\t\t}\n";
 			}
 		} else if($col -> type == "ENUM") {
 			if(count($col -> values) > 0) {
-				return "\t\tif(!in_array(\$".$col -> name . ", self::\$".$col -> name."_values)) {\n" .
+				return "\t\tif(${nullcheck}!in_array(\$".$col -> name . ", self::\$".$col -> name."_values)) {\n" .
 						"\t\t\tthrow new Exception(\"" . $table -> name . "." . $col -> name . " must be one of the defined values.\");\n" .
 						"\t\t}\n";
 			}
 		} else if($col -> type == "CHAR") {
 			if(isset($col -> size[0]) > 0) {
-				return "\t\tif(strlen(\$".$col -> name . ") != ".$col -> size[0]. ") {\n" .
+				return "\t\tif(${nullcheck}strlen(\$".$col -> name . ") != ".$col -> size[0]. ") {\n" .
 						"\t\t\tthrow new Exception(\"" . $table -> name . "." . $col -> name . " must consist of ".$col -> size[0]. " characters\");\n" .
 						"\t\t}\n";
 			}
 		} else if($col -> type == "TEXT") {
-			return "\t\t// TODO: Add TEXT validation to " . $table -> name . "." . $col -> name . "\n";
+			return "\t\tif(${nullcheck}false) {\n" .
+					"\t\t\t// TODO: Add TEXT validation to " . $table -> name . "." . $col -> name . "\n" .
+					"\t\t\tthrow new Exception(\"" . $table -> name . "." . $col -> name . " is not valid.\");\n" .
+					"\t\t}\n";
 		}
-		return "\t\t// TODO: Add validation to " . $table -> name . "." . $col -> name . "\n";
+
+		return "\t\tif(${nullcheck}false) {\n" .
+		"\t\t\t// TODO: Add validation to " . $table -> name . "." . $col -> name . "\n" .
+		"\t\t\tthrow new Exception(\"" . $table -> name . "." . $col -> name . " is not valid.\");\n" .
+		"\t\t}\n";
 	}
 	
 	/**
