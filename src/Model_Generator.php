@@ -242,7 +242,7 @@ class Model_Generator {
 			foreach($entity -> child as $child) {
 				if($child -> toOne) {
 					$str .= "\t\tif(\$this -> " . $child -> dest -> model_storage_name . " !== null) {\n" .
-							"\t\t\t\$values['". $child -> dest -> model_storage_name . "'] = \$this -> " . $parent -> dest -> model_storage_name . " -> toFilteredArray(\$role);\n" .
+							"\t\t\t\$values['". $child -> dest -> model_storage_name . "'] = \$this -> " . $child -> dest -> model_storage_name . " -> toFilteredArray(\$role);\n" .
 							"\t\t}\n";
 				} else {
 					$str .= "\t\t\$values['". $child -> dest -> model_storage_name . "'] = array();\n";
