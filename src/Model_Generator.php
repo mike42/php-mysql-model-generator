@@ -384,8 +384,10 @@ class Model_Generator {
 				"\t\t\$sth = Database::\$dbh -> prepare(\"INSERT INTO `".$entity -> table -> name . "` (\$fields) VALUES (\$vals);\");\n";
 		$str .= "\t\t\$sth -> execute(\$data);\n";
 		if(count($entity -> table -> pk) == 1) {
-			// Auto-increment keys etc
-			$str .= "\t\t\$this -> set" . self::titleCase($entity -> table -> pk[0]). "(database::\$dbh->lastInsertId());\n";
+			// Retrieve PK if we submitted this without one (handles auto-increment keys).
+			$str .= "\t\tif(!isset(\$this -> model_variables_set['".$entity -> table -> pk[0] ."'])) {\n";
+			$str .= "\t\t\t\$this -> set" . self::titleCase($entity -> table -> pk[0]). "(database::\$dbh->lastInsertId());\n";
+			$str .= "\t\t}\n";
 		}
 		$str .= "\t}\n";
 		
