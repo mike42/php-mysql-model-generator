@@ -451,7 +451,7 @@ class Model_Generator {
 						"\t\t\t\$ls = \" LIMIT \$start, \$limit\";\n" .
 						"\t\t}\n";
 				$str .= "\t\t\$sth = Database::\$dbh -> prepare(self::SELECT_QUERY . \"$sql\" . self::SORT_CLAUSE . \$ls . \";\");\n";
-				$str .= "\t\t\$sth -> execute();\n";
+				$str .= "\t\t\$sth -> execute(array(" . implode(", ", $arrEntry) . "));\n";
 				$str .= "\t\t\$rows = \$sth -> fetchAll(PDO::FETCH_NUM);\n" .
 						"\t\t\$ret = array();\n" .
 						"\t\tforeach(\$rows as \$row) {\n" .
@@ -723,7 +723,7 @@ class Model_Generator {
 					// If nullable, only check when not null
 					$str .= implode(" !== null && ", $f) . " !== null && ";
 				}
-				$str .= $parent -> dest -> table -> name . "_Model::" . $index -> getFunctionName() . "(" . implode(", ", $f) . ") == null) {\n";
+				$str .= $parent -> dest -> table -> name . "_Model::" . $index -> getFunctionName() . "(" . implode(", ", $f) . ") === null) {\n";
 				$str .= "\t\t\treturn array('error' => '" . $entity -> table -> name . " is invalid because the " . $parent -> dest -> model_storage_name . " does not exist', 'code' => '400');\n";
 				$str .= "\t\t}\n";
 			}
