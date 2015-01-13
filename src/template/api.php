@@ -2,79 +2,59 @@
 require_once(dirname(__FILE__)."/lib/Core.php");
 Core::loadClass("Database");
 
-/* Set up some basic web things */
-$config['host']                  = isset($_SERVER['HTTP_HOST'])? $_SERVER['HTTP_HOST'] : 'localhost';
-$config['webroot']               = isset($_SERVER['HTTP_HOST'])? 'http://'.$_SERVER['HTTP_HOST'].'/' : '';
-$config['default']['controller'] = 'Page';
-
 /* Map HTTP reuest types to methods */
-switch($_SERVER['REQUEST_METHOD']) {
-	case 'GET':
-		$config['default']['action'] = 'read';
-		break;
-	case 'POST':
-		$config['default']['action'] = 'create';
-		break;
-	case 'PUT':
-		$config['default']['action'] = 'update';
-		break;
-	case 'DELETE':
-		$config['default']['action'] = 'delete';
-		break;
+$request_method = $_SERVER['REQUEST_METHOD'];
+$request_method_defaults = array(
+	"GET" => "read",
+	"POST" => "create",
+	"PUT" => "update",
+	"PATCH" => "update",
+	"DELETE" => "delete",
+);
+if(array_key_exists($request_method, $request_method_defaults)) {
+	$default_action = $request_method_defaults[$request_method];
+} else {
+	Core::fizzle("Unsupported request type", "400");
 }
-$config['default']['arg']		= array('home');
-$config['default']['format']		= 'html';
-Core::$config = $config;
 
 /* Get page (or go to default if none is specified) */
+$help = "Make requests with api.php?p={controller}/{id}, or api.php?p={Controller}/{action}/{id}";
 if(isset($_GET['p']) && $_GET['p'] != '') {
 	$arg = explode('/', $_REQUEST['p']);
 } else {
-	$arg = $config['default']['arg'];
+	Core::fizzle("Not enough information: $help", "400");
 }
 
-/* Get any extension appearing at the end of the request: */
-$tail = count($arg) - 1;
-$fmtsplit = explode('.', $arg[$tail]);
-if(count($fmtsplit) >= 2) {
-	/* One or more extensions on word, eg .rss, .tar.gz */
-	$arg[$tail] = array_shift($fmtsplit);
-	$fmt = implode('.', $fmtsplit);
-} else {
-	/* No extensions at all */
-	$fmt = $config['default']['format'];
-}
-
-/* Switch for number of arguments */
-if(count($arg) > 2) {
-	/* $controller/$action/{foo/bar/baz}.quux */
-	$controller = array_shift($arg);
+/* Map arguments to a controller and method name */
+$controller = array_shift($arg);
+if(count($arg) > 1) {
 	$action = array_shift($arg);
-} elseif(count($arg) == 2) {
-	/* No action specified - $controller/(default action)/{foo}.quux */
-	$controller = array_shift($arg);
-	$action = $config['default']['action'];
-} elseif(count($arg) == 1) {
-	/* No action or controller */
-	$controller = array_shift($arg);
-	$action = $config['default']['action'];
+} elseif(count($arg) <= 1) {
+	$action = $default_action;
+}
+
+/* Sanity check (leading & trailing '/' will trigger these) */
+if(trim($controller) == "") {
+	Core::fizzle("Controller not specified: $help", "400");
+}
+if(trim($action) == "") {
+	Core::fizzle("Action not specified: $help", "400");
 }
 
 /* Figure out class and method name */
 try {
 	$controllerClassName = $controller.'_Controller';
-	$controllerMethodName = $action;
 	core::loadClass($controllerClassName);
-	if(!is_callable($controllerClassName . "::" . $controllerMethodName)) {
-		core::fizzle("Controller '$controllerClassName' does not have method '$controllerMethodName'", '404');
+	if(!is_callable($controllerClassName . "::" . $action)) {
+		Core::fizzle("Controller '$controllerClassName' does not support a '$action' action.", '404');
 	}
-	$ret = call_user_func_array(array($controllerClassName, $controllerMethodName), $arg);
+	$ret = call_user_func_array(array($controllerClassName, $action), $arg);
 	if(isset($ret['error'])) {
-		/* Something went wrong */
-		core::fizzle($ret['error'], isset($ret['code']) ? $ret['code'] : '500');
-	} else {
-		echo json_encode($ret);
+		/* Something went wrong, we got back an 'error' property. */
+		Core::fizzle($ret['error'], isset($ret['code']) ? $ret['code'] : '500');
 	}
+	echo json_encode($ret);
 } catch(Exception $e) {
-	core::fizzle("Failed to run controller: " . $e -> getMessage(), '500');
+	/* Something went wrong, an exception was thrown */
+	Core::fizzle($e -> getMessage(), '500');
 }
